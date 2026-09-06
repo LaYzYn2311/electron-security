@@ -19,6 +19,6 @@ const ADMIN_PASSWORD = 'CW0Owmb84qgx';
  * GitHub and has at least one Release with the installer attached as an
  * asset — until then the panel reports "not configured".
  */
-const GITHUB_REPO = { owner: '', name: '' };
+const GITHUB_REPO = { owner: 'LaYzYn2311', name: 'electron-security' };
 
 module.exports = { ADMIN_USERNAME, ADMIN_PASSWORD, GITHUB_REPO };

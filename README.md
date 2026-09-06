@@ -92,7 +92,7 @@ npm run dist:linux   # .AppImage
 `Ctrl+Alt+A` ανοίγει ένα login prompt· σωστά credentials (βλ. `src/admin/config.js`) αποκαλύπτουν μια κρυφή καρτέλα "Admin" με:
 - **Κατάσταση εφαρμογής** — version, uptime, Electron/Node versions, OS/CPU/μνήμη, ελεύθερος χώρος δίσκου.
 - **Τοπικά δεδομένα** — μέγεθος/πλήθος Κάδου Ασφαλείας, cleanup log, error log.
-- **Downloads** — συνολικό download count ανά GitHub release, μέσω του δημόσιου GitHub API (χρειάζεται να συμπληρωθεί `GITHUB_REPO` στο `src/admin/config.js` μόλις υπάρχει πραγματικό repo/release).
+- **Downloads** — συνολικό download count ανά GitHub release, μέσω του δημόσιου GitHub API. Repo: [LaYzYn2311/electron-security](https://github.com/LaYzYn2311/electron-security).
 - **Error log** — καταγράφει τοπικά (`userData/error-log.jsonl`) ό,τι θα έκανε crash το main process, για support/debugging.
 - Γρήγορες ενέργειες: άνοιγμα φακέλου `userData`, καθαρισμός τοπικού ιστορικού.
 
