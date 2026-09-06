@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+<title>Electron Security</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">🛡️</span>
+      <span class="brand-name">Electron Security</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="scan" data-i18n="tab.scan">Σάρωση</button>
+      <button class="tab" data-tab="security" data-i18n="tab.security">Ασφάλεια</button>
+      <button class="tab" data-tab="speedtest" data-i18n="tab.speedtest">Ταχύτητα</button>
+      <button class="tab" data-tab="cleanup" data-i18n="tab.cleanup">Καθαρισμός</button>
+      <button class="tab" data-tab="quarantine" data-i18n="tab.quarantine">Κάδος Ασφαλείας</button>
+      <button class="tab" data-tab="report" data-i18n="tab.report">Αναφορά</button>
+      <button class="tab" data-tab="admin" id="tab-admin" hidden>Admin</button>
+    </nav>
+    <div class="topbar-toggles">
+      <button class="toggle-btn" id="btn-theme-toggle" title="Theme / Θέμα">🌙</button>
+      <button class="toggle-btn toggle-btn-text" id="btn-lang-toggle" title="Language / Γλώσσα">EN</button>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- SCAN TAB -->
+    <section class="panel active" id="panel-scan">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="scan.title">Σάρωση συστήματος</h1>
+          <p class="muted" data-i18n="scan.desc">Εντοπίζει προσωρινά αρχεία, cache, logs, διπλότυπα, μεγάλα/παλιά αρχεία, άδειους φακέλους και ορφανά installers.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-scan-start" data-i18n="scan.start">Έναρξη σάρωσης</button>
+          <button class="btn btn-ghost" id="btn-scan-cancel" data-i18n="scan.cancel" disabled>Ακύρωση</button>
+        </div>
+      </div>
+
+      <div class="context-menu-row">
+        <button class="btn btn-small btn-ghost" id="btn-context-menu-toggle" data-i18n="scan.context_menu_enable">🖱️ Ενεργοποίηση δεξί-κλικ "Scan this folder"</button>
+      </div>
+
+      <div class="scoped-banner" id="scoped-scan-banner" hidden></div>
+
+      <div class="progress-wrap" id="scan-progress-wrap" hidden>
+        <div class="progress-bar"><div class="progress-fill" id="scan-progress-fill"></div></div>
+        <div class="progress-label" id="scan-progress-label">—</div>
+      </div>
+
+      <div class="summary-row" id="scan-summary" hidden>
+        <div class="summary-card">
+          <div class="summary-value" id="scan-total-size">0 B</div>
+          <div class="summary-label" data-i18n="scan.total_label">Συνολικός ανακτήσιμος χώρος</div>
+        </div>
+        <div class="summary-card">
+          <button class="btn btn-small" id="btn-select-safe" data-i18n="scan.select_safe">Επιλογή προτεινόμενων "ασφαλών"</button>
+          <button class="btn btn-small btn-ghost" id="btn-select-none" data-i18n="scan.select_none">Καμία επιλογή</button>
+        </div>
+      </div>
+
+      <div id="scan-categories" class="categories"></div>
+    </section>
+
+    <!-- SECURITY TAB -->
+    <section class="panel" id="panel-security">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="security.title">Έλεγχος ασφάλειας</h1>
+          <p class="muted" data-i18n="security.desc">Στοιχεία εκκίνησης, προγραμματισμένες εργασίες, ανοιχτές θύρες, firewall, δικαιώματα αρχείων, browser extensions, masked extensions, παρωχημένες εκδόσεις.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-sec-start" data-i18n="security.start">Έναρξη ελέγχου</button>
+          <button class="btn btn-ghost" id="btn-sec-cancel" data-i18n="security.cancel" disabled>Ακύρωση</button>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="sec-progress-wrap" hidden>
+        <div class="progress-bar"><div class="progress-fill" id="sec-progress-fill"></div></div>
+        <div class="progress-label" id="sec-progress-label">—</div>
+      </div>
+
+      <div class="severity-legend" id="sec-summary" hidden></div>
+
+      <div id="sec-sections" class="sec-sections"></div>
+    </section>
+
+    <!-- SPEEDTEST TAB -->
+    <section class="panel" id="panel-speedtest">
+      <div class="speedtest-ambient" aria-hidden="true"><span class="orb orb-1"></span><span class="orb orb-2"></span></div>
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="speedtest.title">Ταχύτητα Internet</h1>
+          <p class="muted" data-i18n="speedtest.desc">Μέτρηση ping, ταχύτητας λήψης και αποστολής. Η μοναδική λειτουργία της εφαρμογής που συνδέεται στο διαδίκτυο — μόνο όταν πατήσετε GO.</p>
+        </div>
+      </div>
+
+      <div class="speedtest-wrap">
+        <div class="gauge-shell">
+          <svg class="gauge" viewBox="0 0 300 175" id="gauge-svg">
+            <defs>
+              <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="var(--accent)" />
+                <stop offset="100%" stop-color="var(--accent-2)" />
+              </linearGradient>
+            </defs>
+            <path class="gauge-track" d="M 20 160 A 130 130 0 0 1 280 160" />
+            <path class="gauge-arc" id="gauge-arc" pathLength="100" d="M 20 160 A 130 130 0 0 1 280 160" />
+            <g id="gauge-ticks"></g>
+            <g class="gauge-needle-group" id="gauge-needle-group">
+              <line class="gauge-needle" id="gauge-needle" x1="150" y1="60" x2="150" y2="33" />
+              <circle class="gauge-needle-dot" cx="150" cy="33" r="7" />
+            </g>
+          </svg>
+          <div class="gauge-readout">
+            <div class="gauge-value" id="gauge-value">0.0</div>
+            <div class="gauge-unit" id="gauge-unit">Mbps</div>
+            <div class="gauge-phase" id="gauge-phase" data-i18n="speedtest.ready">Έτοιμο</div>
+          </div>
+          <button class="go-btn" id="btn-speedtest-go">
+            <span id="go-btn-label" data-i18n="speedtest.go">GO</span>
+          </button>
+        </div>
+
+        <div class="speedtest-actions">
+          <button class="btn btn-ghost" id="btn-speedtest-cancel" data-i18n="speedtest.cancel" hidden>Ακύρωση</button>
+        </div>
+
+        <div class="speedtest-results" id="speedtest-results">
+          <div class="speed-stat" id="stat-ping" data-metric="ping">
+            <div class="speed-stat-icon">📶</div>
+            <div class="speed-stat-value" id="stat-ping-value">—</div>
+            <div class="speed-stat-label" data-i18n="speedtest.ping_label">Ping</div>
+          </div>
+          <div class="speed-stat" id="stat-download" data-metric="download">
+            <div class="speed-stat-icon">⬇️</div>
+            <div class="speed-stat-value" id="stat-download-value">—</div>
+            <div class="speed-stat-label" data-i18n="speedtest.download_label">Λήψη</div>
+          </div>
+          <div class="speed-stat" id="stat-upload" data-metric="upload">
+            <div class="speed-stat-icon">⬆️</div>
+            <div class="speed-stat-value" id="stat-upload-value">—</div>
+            <div class="speed-stat-label" data-i18n="speedtest.upload_label">Αποστολή</div>
+          </div>
+        </div>
+        <div class="speed-verdict" id="speed-verdict" hidden></div>
+        <div class="speedtest-meta" id="speedtest-meta"></div>
+
+        <div class="speed-history-wrap" id="speed-history-wrap" hidden>
+          <div class="speed-history-head">
+            <h2 class="section-subtitle" data-i18n="speedtest.history_title">Ιστορικό μετρήσεων</h2>
+            <button class="btn btn-small btn-ghost" id="btn-speed-history-clear" data-i18n="speedtest.history_clear">Καθαρισμός</button>
+          </div>
+          <div class="speed-history" id="speed-history"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLEANUP TAB -->
+    <section class="panel" id="panel-cleanup">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="cleanup.title">Καθαρισμός</h1>
+          <p class="muted" data-i18n="cleanup.desc">Ελέγξτε τη λίστα πριν διαγράψετε. Καμία διαγραφή δεν γίνεται αυτόματα.</p>
+        </div>
+      </div>
+
+      <div class="cleanup-options">
+        <label class="checkbox-row">
+          <input type="checkbox" id="opt-quarantine" checked />
+          <span data-i18n="cleanup.quarantine_label">Χρήση Κάδου Ασφαλείας (αναστρέψιμο) για</span>
+        </label>
+        <input type="number" id="opt-retention-days" value="30" min="1" max="365" class="input-small" />
+        <span class="muted" data-i18n="cleanup.retention_suffix">ημέρες πριν την οριστική διαγραφή</span>
+      </div>
+      <div class="cleanup-options">
+        <label class="checkbox-row">
+          <input type="checkbox" id="opt-restore-point" checked />
+          <span data-i18n="cleanup.restore_point_label">Δημιουργία System Restore point πριν τον καθαρισμό (επιπλέον δίχτυ ασφαλείας, Windows)</span>
+        </label>
+      </div>
+
+      <div class="cleanup-list" id="cleanup-list">
+        <p class="muted" data-i18n="cleanup.empty_hint">Δεν έχουν επιλεγεί αρχεία. Πηγαίνετε στην καρτέλα «Σάρωση» και επιλέξτε στοιχεία προς διαγραφή.</p>
+      </div>
+
+      <div class="cleanup-footer" id="cleanup-footer" hidden>
+        <div class="cleanup-total" id="cleanup-total-text"></div>
+        <button class="btn btn-danger" id="btn-cleanup-run" data-i18n="cleanup.run_button">Διαγραφή επιλεγμένων</button>
+      </div>
+
+      <div id="cleanup-result" class="cleanup-result"></div>
+    </section>
+
+    <!-- QUARANTINE TAB -->
+    <section class="panel" id="panel-quarantine">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="quarantine.title">Κάδος Ασφαλείας &amp; ιστορικό</h1>
+          <p class="muted" data-i18n="quarantine.desc">Αρχεία που μετακινήθηκαν στον Κάδο Ασφαλείας μπορούν να επαναφερθούν πριν λήξει η περίοδος διατήρησης — σαν κάδος ανακύκλωσης, αλλά για τις διαγραφές που κάνεις μέσα από αυτή την εφαρμογή.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" id="btn-quarantine-refresh" data-i18n="quarantine.refresh">Ανανέωση</button>
+          <button class="btn btn-ghost" id="btn-purge-expired" data-i18n="quarantine.purge_expired">Καθαρισμός ληγμένων</button>
+        </div>
+      </div>
+      <div id="quarantine-batches" class="quarantine-batches"></div>
+
+      <h2 class="section-subtitle" data-i18n="quarantine.log_title">Ιστορικό ενεργειών</h2>
+      <div id="cleanup-log" class="cleanup-log"></div>
+    </section>
+
+    <!-- REPORT TAB -->
+    <section class="panel" id="panel-report">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="report.title">Τελική αναφορά</h1>
+          <p class="muted" data-i18n="report.desc">Χρειάζεται να έχετε τρέξει τουλάχιστον μία σάρωση και έναν έλεγχο ασφαλείας.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-report-generate" data-i18n="report.generate">Δημιουργία αναφοράς</button>
+          <button class="btn btn-ghost" id="btn-report-pdf" data-i18n="report.export_pdf" disabled>Εξαγωγή σε PDF</button>
+        </div>
+      </div>
+
+      <div id="report-content" class="report-content">
+        <p class="muted" data-i18n="report.empty">Δεν έχει δημιουργηθεί ακόμα αναφορά.</p>
+      </div>
+    </section>
+
+    <!-- ADMIN TAB (hidden, unlocked via Ctrl+Alt+A) -->
+    <section class="panel" id="panel-admin">
+      <div class="panel-header">
+        <div>
+          <h1>Admin panel</h1>
+          <p class="muted">Τοπικά diagnostics + GitHub download stats. Δεν στέλνεται τίποτα πουθενά εκτός από το προαιρετικό GitHub check.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost" id="btn-admin-refresh">↻ Ανανέωση</button>
+          <button class="btn btn-ghost" id="btn-admin-logout">Αποσύνδεση</button>
+        </div>
+      </div>
+      <div id="admin-content" class="admin-content"></div>
+    </section>
+
+  </main>
+
+  <!-- ADMIN LOGIN MODAL -->
+  <div class="modal-overlay" id="admin-login-overlay" hidden>
+    <div class="modal-box">
+      <h2>🔒 Admin login</h2>
+      <p class="muted">Ctrl+Alt+A για να κλείσεις.</p>
+      <form id="admin-login-form">
+        <input type="text" id="admin-username" placeholder="Username" autocomplete="off" />
+        <input type="password" id="admin-password" placeholder="Password" autocomplete="off" />
+        <div class="modal-error" id="admin-login-error" hidden></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-admin-cancel">Άκυρο</button>
+          <button type="submit" class="btn btn-primary">Σύνδεση</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <footer class="statusbar">
+    <span id="status-text">Έτοιμο. Καμία σύνδεση στο διαδίκτυο εκτός από το προαιρετικό speed test — όλα τα υπόλοιπα γίνονται τοπικά.</span>
+  </footer>
+</div>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
