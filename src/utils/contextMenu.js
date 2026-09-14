@@ -17,6 +17,10 @@ const ROOTS = [
   `HKCU\\Software\\Classes\\Directory\\Background\\shell\\${KEY_NAME}`,
 ];
 const ARG_TOKEN = { folder: '%1', background: '%V' };
+// reg.exe receives argv through a legacy code-page round-trip in this environment,
+// which mangles non-ASCII text (Greek came out as mojibake) — the command itself
+// still worked, only the menu label was garbled. Keep this label ASCII-only.
+const SAFE_ASCII_LABEL = 'Scan with Electron Security';
 
 function commandLine(exePath, extraArgs, argToken) {
   const args = extraArgs.length ? extraArgs.map((a) => `"${a}"`).join(' ') + ' ' : '';
@@ -27,12 +31,12 @@ async function isSupported() {
   return platform === 'win32';
 }
 
-async function registerContextMenu({ exePath, extraArgs = [], label }) {
+async function registerContextMenu({ exePath, extraArgs = [] }) {
   if (!(await isSupported())) return { ok: false, reason: 'unsupported-platform' };
   try {
     for (const root of ROOTS) {
       const isBackground = root.includes('Background');
-      await execFileAsync('reg', ['add', root, '/ve', '/d', label, '/f']);
+      await execFileAsync('reg', ['add', root, '/ve', '/d', SAFE_ASCII_LABEL, '/f']);
       await execFileAsync('reg', ['add', root, '/v', 'Icon', '/d', exePath, '/f']);
       await execFileAsync('reg', ['add', `${root}\\command`, '/ve', '/d', commandLine(exePath, extraArgs, isBackground ? ARG_TOKEN.background : ARG_TOKEN.folder), '/f']);
     }

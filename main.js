@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 
 const { runFullScan, runFolderScan } = require('./src/scanner');
 const { runSecurityScan } = require('./src/security');
@@ -14,6 +15,7 @@ const { ADMIN_USERNAME, ADMIN_PASSWORD } = require('./src/admin/config');
 const { collectDiagnostics } = require('./src/admin/diagnostics');
 const { installErrorLogger, readErrorLog } = require('./src/admin/errorLog');
 const { fetchDownloadStats } = require('./src/admin/githubDownloads');
+const { setupAutoUpdater, checkForUpdatesNow, installUpdateNow } = require('./src/updater');
 const { t } = require('./src/i18n');
 
 function extractScanFolderArg(argv) {
@@ -51,7 +53,7 @@ function createWindow() {
     height: 780,
     minWidth: 900,
     minHeight: 600,
-    title: 'Electron Security',
+    title: 'Electron Security V2',
     autoHideMenuBar: true,
     ...(devIconPath ? { icon: devIconPath } : {}),
     webPreferences: {
@@ -86,6 +88,7 @@ if (!gotSingleInstanceLock) {
       app.dock.setIcon(devIconPath);
     }
     createWindow();
+    setupAutoUpdater(() => mainWindow);
     const initialFolder = extractScanFolderArg(process.argv);
     if (initialFolder) {
       mainWindow.webContents.once('did-finish-load', () => {
@@ -155,9 +158,9 @@ ipcMain.handle('scan:folder', async (event, folderPath, locale) => {
 });
 
 // ---- Explorer context menu ----
-ipcMain.handle('contextmenu:register', async (event, locale) => {
+ipcMain.handle('contextmenu:register', async () => {
   const { exePath, extraArgs } = getContextMenuTarget();
-  return registerContextMenu({ exePath, extraArgs, label: t(locale || 'el', 'contextmenu.label') });
+  return registerContextMenu({ exePath, extraArgs });
 });
 
 ipcMain.handle('contextmenu:unregister', async () => unregisterContextMenu());
@@ -211,6 +214,12 @@ ipcMain.handle('cleanup:run', async (event, { items, useQuarantine, retentionDay
   let restorePointResult = null;
   if (createRestorePointFirst) {
     restorePointResult = await createRestorePoint('Electron Security cleanup');
+    if (!restorePointResult.created && Notification.isSupported()) {
+      new Notification({
+        title: t(locale || 'el', 'notif.restore_point_failed_title'),
+        body: t(locale || 'el', 'notif.restore_point_failed_body', { reason: restorePointResult.reason || '?' }),
+      }).show();
+    }
   }
   let result;
   if (useQuarantine) {
@@ -234,6 +243,19 @@ ipcMain.handle('cleanup:run', async (event, { items, useQuarantine, retentionDay
     });
   }
   return { ...result, restorePoint: restorePointResult };
+});
+
+ipcMain.handle('updater:checkNow', async () => checkForUpdatesNow());
+ipcMain.handle('updater:installNow', async () => { installUpdateNow(); return true; });
+
+ipcMain.handle('system:openProtectionSettings', async () => {
+  if (process.platform !== 'win32') return { ok: false, reason: 'unsupported-platform' };
+  try {
+    execFile('SystemPropertiesProtection.exe');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
 });
 
 ipcMain.handle('quarantine:list', async () => {

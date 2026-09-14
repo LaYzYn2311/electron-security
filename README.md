@@ -1,4 +1,4 @@
-# Electron Security
+# Electron Security V2
 
 Cross-platform desktop εφαρμογή (Windows / macOS / Linux) που σαρώνει τον δίσκο για junk/duplicate αρχεία, ελέγχει βασικές ρυθμίσεις ασφάλειας, και επιτρέπει ασφαλή, αναστρέψιμο καθαρισμό — όλα τοπικά, χωρίς αποστολή δεδομένων online.
 

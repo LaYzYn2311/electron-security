@@ -308,6 +308,36 @@ h2.section-subtitle { font-size: 15px; margin: 28px 0 10px; color: var(--text-mu
 .rec-text { font-size: 12.5px; }
 .rec-detail { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; }
 
+/* ---------- Toast notifications ---------- */
+.toast-stack {
+  position: fixed; top: 16px; right: 16px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 10px;
+  width: 340px; max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  padding: 12px 14px;
+  animation: toast-in 0.25s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.toast.leaving { animation: toast-out 0.2s ease forwards; }
+@keyframes toast-in { 0% { opacity: 0; transform: translateX(24px); } 100% { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { 0% { opacity: 1; transform: translateX(0); } 100% { opacity: 0; transform: translateX(24px); } }
+.toast.warning { border-left-color: var(--medium); }
+.toast.critical { border-left-color: var(--critical); }
+.toast.ok { border-left-color: var(--ok); }
+.toast-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.toast-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.toast-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px; }
+.toast-close:hover { color: var(--text); }
+.toast-body { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; white-space: pre-wrap; }
+.toast-actions { display: flex; gap: 8px; margin-top: 10px; }
+
 /* ---------- Admin login modal ---------- */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 1000;

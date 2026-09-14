@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('api', {
   adminErrorLog: () => ipcRenderer.invoke('admin:errorLog'),
   adminGithubDownloads: () => ipcRenderer.invoke('admin:githubDownloads'),
   adminOpenUserData: () => ipcRenderer.invoke('admin:openUserData'),
+  openSystemProtectionSettings: () => ipcRenderer.invoke('system:openProtectionSettings'),
+
+  updaterCheckNow: () => ipcRenderer.invoke('updater:checkNow'),
+  updaterInstallNow: () => ipcRenderer.invoke('updater:installNow'),
+  onUpdaterEvent: (cb) => onProgress('updater:event', cb),
 
   securityStart: (locale) => ipcRenderer.invoke('security:start', locale),
   securityCancel: () => ipcRenderer.invoke('security:cancel'),

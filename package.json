@@ -1,7 +1,7 @@
 {
   "name": "system-cleaner-security-scanner",
-  "productName": "Electron Security",
-  "version": "1.0.0",
+  "productName": "Electron Security V2",
+  "version": "2.0.0",
   "description": "Cross-platform desktop app that scans your disk for junk/duplicate files and common security misconfigurations, and lets you clean up safely with an undo window.",
   "main": "main.js",
   "author": "",
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "com.local.systemcleaner",
-    "productName": "Electron Security",
+    "productName": "Electron Security V2",
     "files": [
       "main.js",
       "preload.js",
@@ -42,13 +42,21 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Electron Security"
+      "shortcutName": "Electron Security V2"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
       "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "LaYzYn2311",
+      "repo": "electron-security"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

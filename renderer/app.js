@@ -19,6 +19,43 @@ function localeTag() {
 function setStatus(text) {
   document.getElementById('status-text').textContent = text;
 }
+/**
+ * A real, dismissible notification (top-right), distinct from the quiet
+ * status-bar text — for anything the user should actually notice, with
+ * room for an explanation and optional action buttons.
+ */
+function showToast({ title, body, tone = 'info', actions = [], autoDismissMs = 12000 }) {
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = `toast ${tone}`;
+  el.innerHTML = `
+    <div class="toast-head">
+      <div class="toast-title">${escapeHtml(title)}</div>
+      <button class="toast-close" aria-label="close">✕</button>
+    </div>
+    ${body ? `<div class="toast-body">${escapeHtml(body)}</div>` : ''}
+    ${actions.length ? '<div class="toast-actions"></div>' : ''}
+  `;
+  const dismiss = () => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 220);
+  };
+  el.querySelector('.toast-close').addEventListener('click', dismiss);
+  if (actions.length) {
+    const actionsEl = el.querySelector('.toast-actions');
+    for (const a of actions) {
+      const btn = document.createElement('button');
+      btn.className = `btn btn-small ${a.primary ? 'btn-primary' : 'btn-ghost'}`;
+      btn.textContent = a.label;
+      btn.addEventListener('click', () => { a.onClick?.(); if (a.dismissOnClick !== false) dismiss(); });
+      actionsEl.appendChild(btn);
+    }
+  }
+  stack.appendChild(el);
+  if (autoDismissMs) setTimeout(dismiss, autoDismissMs);
+  return dismiss;
+}
+
 function animateCountUp(el, target, duration = 700) {
   if (!el) return;
   const start = performance.now();
@@ -764,14 +801,26 @@ document.getElementById('btn-cleanup-run').addEventListener('click', async () =>
     const successMsg = useQuarantine
       ? t('cleanup.success_quarantine', { count: doneCount, size: formatBytes(doneSize) })
       : t('cleanup.success_delete', { count: doneCount, size: formatBytes(doneSize) });
-    const restoreMsg = !createRestorePointFirst ? '' : result.restorePoint?.created
-      ? t('cleanup.restore_point_created')
-      : t('cleanup.restore_point_failed', { reason: result.restorePoint?.reason || '?' });
     cleanupResultEl.innerHTML = `
       <div class="empty-note" style="background:#13332633;border:1px solid var(--ok);border-radius:8px;">
         ${escapeHtml(successMsg)}${errCount ? escapeHtml(t('cleanup.success_errors', { n: errCount })) : ''}
-        ${restoreMsg ? `<br>${escapeHtml(restoreMsg)}` : ''}
       </div>`;
+
+    if (createRestorePointFirst) {
+      if (result.restorePoint?.created) {
+        showToast({ title: t('toast.restore_point_created_title'), body: t('toast.restore_point_created_body'), tone: 'ok', autoDismissMs: 6000 });
+      } else {
+        showToast({
+          title: t('toast.restore_point_failed_title'),
+          body: t('toast.restore_point_failed_body', { reason: result.restorePoint?.reason || '?' }),
+          tone: 'warning',
+          autoDismissMs: 0,
+          actions: [
+            { label: t('toast.open_settings'), primary: true, onClick: () => window.api.openSystemProtectionSettings() },
+          ],
+        });
+      }
+    }
 
     const doneIds = new Set((useQuarantine ? result.moved : result.deleted).map((i) => i.id || i.originalPath));
     for (const item of items) {
@@ -1163,6 +1212,23 @@ async function loadAdminPanel() {
     setStatus(t('admin.history_cleared'));
   });
 }
+
+// ---------- auto-update ----------
+window.api.onUpdaterEvent?.((data) => {
+  if (data.type === 'available') {
+    showToast({ title: t('toast.update_available_title'), body: t('toast.update_available_body', { version: data.version }), tone: 'info' });
+  } else if (data.type === 'downloaded') {
+    showToast({
+      title: t('toast.update_ready_title'),
+      body: t('toast.update_ready_body', { version: data.version }),
+      tone: 'ok',
+      autoDismissMs: 0,
+      actions: [{ label: t('toast.restart_now'), primary: true, onClick: () => window.api.updaterInstallNow() }],
+    });
+  } else if (data.type === 'error') {
+    console.warn('Updater error:', data.message);
+  }
+});
 
 // ---------- init ----------
 applyTheme(state.theme);

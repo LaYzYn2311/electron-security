@@ -31,7 +31,8 @@ const STRINGS = {
     'largeold.reason': ({ mb, days }) => `${mb} MB, χωρίς χρήση ${days} ημέρες`,
     'duplicates.reason': ({ count }) => `${count} πανομοιότυπα αντίγραφα`,
 
-    'contextmenu.label': () => 'Σάρωση με Electron Security',
+    'notif.restore_point_failed_title': () => 'System Restore point απέτυχε',
+    'notif.restore_point_failed_body': ({ reason }) => `Λόγος: ${reason}. Ο Κάδος Ασφαλείας παραμένει διαθέσιμος. Δες την εφαρμογή για οδηγίες.`,
     'security.antivirus': () => 'Antivirus',
     'security.hosts_file': () => 'Hosts file',
     'security.browser_hijack': () => 'Browser hijack',
@@ -138,7 +139,8 @@ const STRINGS = {
     'largeold.reason': ({ mb, days }) => `${mb} MB, unused for ${days} days`,
     'duplicates.reason': ({ count }) => `${count} identical copies`,
 
-    'contextmenu.label': () => 'Scan with Electron Security',
+    'notif.restore_point_failed_title': () => 'System Restore point failed',
+    'notif.restore_point_failed_body': ({ reason }) => `Reason: ${reason}. The Safety Bin is still available. Check the app for what to do.`,
     'security.antivirus': () => 'Antivirus',
     'security.hosts_file': () => 'Hosts file',
     'security.browser_hijack': () => 'Browser hijack',
