@@ -8,6 +8,27 @@ const { scanFilePermissions } = require('./filePermissions');
 const { scanBrowserExtensions } = require('./browserExtensions');
 const { scanMaskedExtensions } = require('./maskedExtensions');
 const { scanOutdatedApps } = require('./outdatedApps');
+const { scanDiskEncryption } = require('./diskEncryption');
+const { scanPrivacySettings } = require('./privacySettings');
+const { scanDriverInventory } = require('./driverInventory');
+const { scanCheatTools } = require('./cheatDetection');
+const { scanRemoteAccessTools } = require('./remoteAccessTools');
+const { scanPrivacyAccessLog } = require('./privacyAccessLog');
+const { scanAutorun } = require('./autorunCheck');
+const { scanRootCertificates } = require('./rootCertificates');
+const { scanOutboundConnections } = require('./outboundConnections');
+const { scanRdp } = require('./rdpCheck');
+const { scanSmbv1 } = require('./smbv1Check');
+const { scanLocalAccounts } = require('./localAccounts');
+const { scanProxyHijack } = require('./proxyHijack');
+const { scanScreenLock } = require('./screenLockCheck');
+const { scanPathAudit } = require('./pathAudit');
+const { scanProcessMasquerade } = require('./processMasquerade');
+const { scanLiveAccess } = require('./liveAccessCheck');
+const { scanRootkitCrossView } = require('./rootkitCrossView');
+const { scanFakeAntivirus } = require('./fakeAntivirus');
+const { scanShortcutIntegrity } = require('./shortcutIntegrity');
+const { scanOnedriveSync } = require('./onedriveSync');
 const { t } = require('../i18n');
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info', 'ok'];
@@ -24,6 +45,27 @@ const CHECKS = [
   ['browser_extensions', scanBrowserExtensions],
   ['masked_extensions', scanMaskedExtensions],
   ['outdated_apps', scanOutdatedApps],
+  ['disk_encryption', scanDiskEncryption],
+  ['privacy_settings', scanPrivacySettings],
+  ['driver_inventory', scanDriverInventory],
+  ['cheat_tools', scanCheatTools],
+  ['remote_access_tools', scanRemoteAccessTools],
+  ['privacy_access_log', scanPrivacyAccessLog],
+  ['autorun', scanAutorun],
+  ['root_certificates', scanRootCertificates],
+  ['outbound_connections', scanOutboundConnections],
+  ['rdp', scanRdp],
+  ['smbv1', scanSmbv1],
+  ['local_accounts', scanLocalAccounts],
+  ['proxy_hijack', scanProxyHijack],
+  ['screen_lock', scanScreenLock],
+  ['path_audit', scanPathAudit],
+  ['process_masquerade', scanProcessMasquerade],
+  ['live_access', scanLiveAccess],
+  ['rootkit_cross_view', scanRootkitCrossView],
+  ['fake_antivirus', scanFakeAntivirus],
+  ['shortcut_integrity', scanShortcutIntegrity],
+  ['onedrive_sync', scanOnedriveSync],
 ];
 
 async function runSecurityScan(ctx) {

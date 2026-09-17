@@ -16,6 +16,11 @@ const { collectDiagnostics } = require('./src/admin/diagnostics');
 const { installErrorLogger, readErrorLog } = require('./src/admin/errorLog');
 const { fetchDownloadStats } = require('./src/admin/githubDownloads');
 const { setupAutoUpdater, checkForUpdatesNow, installUpdateNow } = require('./src/updater');
+const { createTray, destroyTray, setBackgroundScanEnabled, runBackgroundScan } = require('./src/tray');
+const { readSettings, writeSettings } = require('./src/settings');
+const { getChangelogFor } = require('./src/changelog');
+const { getTopProcesses } = require('./src/system/resourceUsage');
+const { getPublicIpInfo, geolocateIps, getLocalNetworkInfo } = require('./src/network/ipInfo');
 const { t } = require('./src/i18n');
 
 function extractScanFolderArg(argv) {
@@ -32,6 +37,8 @@ let mainWindow;
 let scanCancelToken = { cancelled: false };
 let securityCancelToken = { cancelled: false };
 let speedtestCancelToken = { cancelled: false };
+let isQuitting = false;
+let currentLocale = 'el';
 
 function userDataPaths() {
   const root = app.getPath('userData');
@@ -64,6 +71,25 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // Windows: closing the window hides it to the tray instead of quitting, so
+  // the scheduled background scan (if enabled) keeps running. Only "Έξοδος"
+  // from the tray menu, or an actual app quit, sets isQuitting first.
+  if (process.platform === 'win32') {
+    mainWindow.on('close', (event) => {
+      if (isQuitting) return;
+      event.preventDefault();
+      mainWindow.hide();
+      const settings = readSettings(app.getPath('userData'));
+      if (!settings.hasShownTrayHideNotice && Notification.isSupported()) {
+        new Notification({
+          title: t(currentLocale, 'tray.hide_notice_title'),
+          body: t(currentLocale, 'tray.hide_notice_body'),
+        }).show();
+      }
+      writeSettings(app.getPath('userData'), { hasShownTrayHideNotice: true });
+    });
+  }
 }
 
 // Single-instance: a second launch (e.g. right-clicking another folder while
@@ -76,6 +102,10 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', (event, argv) => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
+    // Closing to tray hides the window (not the same state as "minimized"),
+    // so a re-launch (double-clicking the shortcut again while already
+    // running) needs its own show() or the window silently stays hidden.
+    if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
     const folder = extractScanFolderArg(argv);
     if (folder) mainWindow.webContents.send('scan:targetFolder', folder);
@@ -95,10 +125,20 @@ if (!gotSingleInstanceLock) {
         mainWindow.webContents.send('scan:targetFolder', initialFolder);
       });
     }
+    createTray({
+      getMainWindow: () => mainWindow,
+      userDataDir: app.getPath('userData'),
+      getLocale: () => currentLocale,
+      onQuit: () => { isQuitting = true; app.quit(); },
+    });
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else { mainWindow.show(); mainWindow.focus(); }
     });
   });
+
+  app.on('before-quit', () => { isQuitting = true; });
+  app.on('will-quit', () => destroyTray());
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
@@ -248,14 +288,82 @@ ipcMain.handle('cleanup:run', async (event, { items, useQuarantine, retentionDay
 ipcMain.handle('updater:checkNow', async () => checkForUpdatesNow());
 ipcMain.handle('updater:installNow', async () => { installUpdateNow(); return true; });
 
+// ---- Locale (needed by the tray menu / native notifications, which live outside the renderer) ----
+ipcMain.on('locale:set', (event, locale) => { currentLocale = locale || 'el'; });
+
+// ---- App version / changelog (for the "What's New" screen) ----
+ipcMain.handle('app:getVersion', async () => app.getVersion());
+ipcMain.handle('app:getChangelog', async (event, version) => getChangelogFor(version));
+
+// ---- Background scan setting (tray) ----
+ipcMain.handle('settings:getBackgroundScan', async () => {
+  const settings = readSettings(app.getPath('userData'));
+  return !!settings.backgroundScanEnabled;
+});
+ipcMain.handle('settings:setBackgroundScan', async (event, enabled) => {
+  setBackgroundScanEnabled(!!enabled, {
+    getMainWindow: () => mainWindow,
+    userDataDir: app.getPath('userData'),
+    getLocale: () => currentLocale,
+    onQuit: () => { isQuitting = true; app.quit(); },
+  });
+  return true;
+});
+ipcMain.handle('network:localInfo', async () => {
+  try {
+    return await getLocalNetworkInfo();
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('network:publicIp', async () => {
+  try {
+    return await getPublicIpInfo();
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('network:geolocateIps', async (event, ips) => {
+  try {
+    return await geolocateIps(ips);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('system:topProcesses', async () => {
+  try {
+    return await getTopProcesses();
+  } catch (err) {
+    return { supported: false, error: err.message };
+  }
+});
+
+ipcMain.handle('scan:runBackgroundNow', async () => {
+  await runBackgroundScan({
+    getMainWindow: () => mainWindow,
+    userDataDir: app.getPath('userData'),
+    locale: currentLocale,
+    manual: true,
+  });
+  return true;
+});
+
 ipcMain.handle('system:openProtectionSettings', async () => {
   if (process.platform !== 'win32') return { ok: false, reason: 'unsupported-platform' };
-  try {
-    execFile('SystemPropertiesProtection.exe');
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, reason: err.message };
-  }
+  return new Promise((resolve) => {
+    // SystemPropertiesProtection.exe needs to go through ShellExecute (what
+    // `cmd /c start` triggers) — spawning it directly via execFile/spawn
+    // fails with EACCES on this kind of system utility, and execFile without
+    // a callback swallows that failure silently (the 'error' event fires on
+    // the returned ChildProcess, which nothing was listening to), so the old
+    // code always reported success even when nothing opened.
+    const child = execFile('cmd.exe', ['/c', 'start', '""', 'SystemPropertiesProtection.exe'], { windowsHide: true });
+    child.on('error', (err) => resolve({ ok: false, reason: err.message }));
+    child.on('exit', (code) => resolve(code === 0 ? { ok: true } : { ok: false, reason: `exit code ${code}` }));
+  });
 });
 
 ipcMain.handle('quarantine:list', async () => {
@@ -299,9 +407,56 @@ ipcMain.handle('shell:showInFolder', async (event, targetPath) => {
   return true;
 });
 
+// Only ever opens a small, hardcoded allowlist of trusted URLs this app
+// constructs itself (never an arbitrary renderer-supplied string) — see the
+// haveibeenpwned button, the only caller.
+const EXTERNAL_URL_ALLOWLIST = ['https://haveibeenpwned.com/'];
+ipcMain.handle('shell:openExternal', async (event, url) => {
+  if (!EXTERNAL_URL_ALLOWLIST.includes(url)) return { ok: false, reason: 'not-allowlisted' };
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
 // ---- Report ----
 ipcMain.handle('report:generate', async (event, { scanResult, securityResult, locale }) => {
   return computeReport({ scanResult, securityResult, locale: locale || 'el' });
+});
+
+function csvEscape(value) {
+  const s = String(value ?? '');
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+ipcMain.handle('report:exportJson', async (event, payload, locale) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: t(locale || 'el', 'dialog.export_json_title'),
+    defaultPath: path.join(app.getPath('documents'), `system-report-${Date.now()}.json`),
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  if (canceled || !filePath) return { canceled: true };
+  await fs.promises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+  return { canceled: false, filePath };
+});
+
+ipcMain.handle('report:exportCsv', async (event, { scanResult, securityResult }, locale) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: t(locale || 'el', 'dialog.export_csv_title'),
+    defaultPath: path.join(app.getPath('documents'), `system-report-${Date.now()}.csv`),
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+  });
+  if (canceled || !filePath) return { canceled: true };
+
+  const rows = [['section', 'type', 'severity_or_size', 'title_or_path', 'detail']];
+  for (const [key, cat] of Object.entries(scanResult?.categories || {})) {
+    for (const item of cat.items) rows.push(['scan', key, String(item.size), item.path, item.reason || '']);
+  }
+  for (const f of securityResult?.allFindings || []) {
+    rows.push(['security', f.type, f.severity, f.title, f.detail || '']);
+  }
+  const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
+  await fs.promises.writeFile(filePath, csv, 'utf8');
+  return { canceled: false, filePath };
 });
 
 ipcMain.handle('report:exportPdf', async (event, reportHtml, locale) => {

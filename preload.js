@@ -28,6 +28,21 @@ contextBridge.exposeInMainWorld('api', {
   updaterInstallNow: () => ipcRenderer.invoke('updater:installNow'),
   onUpdaterEvent: (cb) => onProgress('updater:event', cb),
 
+  setLocale: (locale) => ipcRenderer.send('locale:set', locale),
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getChangelog: (version) => ipcRenderer.invoke('app:getChangelog', version),
+
+  getBackgroundScanEnabled: () => ipcRenderer.invoke('settings:getBackgroundScan'),
+  setBackgroundScanEnabled: (enabled) => ipcRenderer.invoke('settings:setBackgroundScan', enabled),
+  runBackgroundScanNow: () => ipcRenderer.invoke('scan:runBackgroundNow'),
+  getTopProcesses: () => ipcRenderer.invoke('system:topProcesses'),
+
+  getLocalNetworkInfo: () => ipcRenderer.invoke('network:localInfo'),
+  getPublicIp: () => ipcRenderer.invoke('network:publicIp'),
+  geolocateIps: (ips) => ipcRenderer.invoke('network:geolocateIps', ips),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  onBackgroundScanResult: (cb) => onProgress('scan:backgroundResult', cb),
+
   securityStart: (locale) => ipcRenderer.invoke('security:start', locale),
   securityCancel: () => ipcRenderer.invoke('security:cancel'),
   onSecurityProgress: (cb) => onProgress('security:progress', cb),
@@ -48,4 +63,6 @@ contextBridge.exposeInMainWorld('api', {
 
   reportGenerate: (payload) => ipcRenderer.invoke('report:generate', payload),
   reportExportPdf: (html, locale) => ipcRenderer.invoke('report:exportPdf', html, locale),
+  reportExportJson: (payload, locale) => ipcRenderer.invoke('report:exportJson', payload, locale),
+  reportExportCsv: (payload, locale) => ipcRenderer.invoke('report:exportCsv', payload, locale),
 });

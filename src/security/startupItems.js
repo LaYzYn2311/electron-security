@@ -38,6 +38,8 @@ async function scanStartupLocations(ctx) {
         severity: suspicious ? 'medium' : 'info',
         title: t(ctx.locale, 'startup.item_title', { name: entry.name }),
         detail: `${fullPath}${suspicious ? t(ctx.locale, 'startup.suspicious_suffix') : ''}`,
+        path: fullPath,
+        isDirectory: entry.isDirectory(),
       });
     }
   }

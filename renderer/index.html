@@ -2,7 +2,7 @@
 <html lang="el">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' file:" />
 <title>Electron Security V2</title>
 <link rel="stylesheet" href="style.css" />
 </head>
@@ -18,6 +18,8 @@
       <button class="tab active" data-tab="scan" data-i18n="tab.scan">Σάρωση</button>
       <button class="tab" data-tab="security" data-i18n="tab.security">Ασφάλεια</button>
       <button class="tab" data-tab="speedtest" data-i18n="tab.speedtest">Ταχύτητα</button>
+      <button class="tab" data-tab="performance" data-i18n="tab.performance">Επιδόσεις</button>
+      <button class="tab" data-tab="network" data-i18n="tab.network">Δίκτυο</button>
       <button class="tab" data-tab="cleanup" data-i18n="tab.cleanup">Καθαρισμός</button>
       <button class="tab" data-tab="quarantine" data-i18n="tab.quarantine">Κάδος Ασφαλείας</button>
       <button class="tab" data-tab="report" data-i18n="tab.report">Αναφορά</button>
@@ -48,11 +50,18 @@
         <button class="btn btn-small btn-ghost" id="btn-context-menu-toggle" data-i18n="scan.context_menu_enable">🖱️ Ενεργοποίηση δεξί-κλικ "Scan this folder"</button>
       </div>
 
+      <div class="bg-scan-row">
+        <input type="checkbox" id="opt-bg-scan" />
+        <label for="opt-bg-scan" data-i18n="scan.bg_scan_label">Περιοδική σάρωση στο παρασκήνιο (ειδοποίηση αν βρεθούν πολλά προς καθαρισμό)</label>
+      </div>
+
       <div class="scoped-banner" id="scoped-scan-banner" hidden></div>
+      <div class="scoped-banner" id="scan-diff-banner" hidden></div>
 
       <div class="progress-wrap" id="scan-progress-wrap" hidden>
         <div class="progress-bar"><div class="progress-fill" id="scan-progress-fill"></div></div>
         <div class="progress-label" id="scan-progress-label">—</div>
+        <div class="fun-fact" id="scan-fun-fact"></div>
       </div>
 
       <div class="summary-row" id="scan-summary" hidden>
@@ -85,6 +94,7 @@
       <div class="progress-wrap" id="sec-progress-wrap" hidden>
         <div class="progress-bar"><div class="progress-fill" id="sec-progress-fill"></div></div>
         <div class="progress-label" id="sec-progress-label">—</div>
+        <div class="fun-fact" id="sec-fun-fact"></div>
       </div>
 
       <div class="severity-legend" id="sec-summary" hidden></div>
@@ -158,8 +168,61 @@
             <h2 class="section-subtitle" data-i18n="speedtest.history_title">Ιστορικό μετρήσεων</h2>
             <button class="btn btn-small btn-ghost" id="btn-speed-history-clear" data-i18n="speedtest.history_clear">Καθαρισμός</button>
           </div>
+          <p class="muted speed-best-time" id="speed-best-time" hidden></p>
           <div class="speed-history" id="speed-history"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- PERFORMANCE TAB -->
+    <section class="panel" id="panel-performance">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="performance.title">Επιδόσεις τώρα</h1>
+          <p class="muted" data-i18n="performance.desc">Ποιες διεργασίες χρησιμοποιούν CPU/RAM αυτή τη στιγμή — ένα στιγμιότυπο, όχι συνεχής παρακολούθηση. Καθαρά τοπικά δεδομένα.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-perf-refresh" data-i18n="performance.refresh">Ανανέωση</button>
+        </div>
+      </div>
+
+      <div id="perf-content" class="perf-content">
+        <p class="muted" data-i18n="performance.empty">Πάτησε «Ανανέωση» για στιγμιότυπο.</p>
+      </div>
+    </section>
+
+    <!-- NETWORK TAB -->
+    <section class="panel" id="panel-network">
+      <div class="panel-header">
+        <div>
+          <h1 data-i18n="network.title">Δίκτυο</h1>
+          <p class="muted" data-i18n="network.desc">Τοπικά στοιχεία δικτύου (καμία σύνδεση στο διαδίκτυο). Η δημόσια IP/τοποθεσία χρειάζεται ρητό κλικ παρακάτω.</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btn-network-refresh" data-i18n="network.refresh">Ανανέωση τοπικών στοιχείων</button>
+        </div>
+      </div>
+
+      <div id="network-local-content" class="network-local"></div>
+
+      <div class="network-optin">
+        <h2 class="section-subtitle" data-i18n="network.public_ip_title">🌐 Δημόσια IP &amp; τοποθεσία (χρησιμοποιεί το διαδίκτυο)</h2>
+        <p class="muted" data-i18n="network.public_ip_desc">Στέλνει ένα αίτημα στο ipapi.co για να μάθει τη δημόσια IP σου και μια χονδρική τοποθεσία (πόλη/χώρα/πάροχος). Τίποτα δεν στέλνεται μέχρι να πατήσεις το κουμπί.</p>
+        <button class="btn btn-ghost" id="btn-public-ip">🌐 Έλεγχος δημόσιας IP</button>
+        <div id="public-ip-result" class="network-result"></div>
+      </div>
+
+      <div class="network-optin" id="outbound-geolocate-wrap" hidden>
+        <h2 class="section-subtitle" data-i18n="network.geolocate_title">🌍 Τοποθεσία εξερχόμενων συνδέσεων (χρησιμοποιεί το διαδίκτυο)</h2>
+        <p class="muted" data-i18n="network.geolocate_desc">Στέλνει τις IP διευθύνσεις από τον τελευταίο έλεγχο ασφαλείας (μέχρι 10) στο ipapi.co για να βρει χώρα/πόλη/πάροχο. Χρειάζεται πρώτα έναν έλεγχο ασφαλείας.</p>
+        <button class="btn btn-ghost" id="btn-geolocate-outbound">🌍 Εντοπισμός τοποθεσιών</button>
+        <div id="geolocate-result" class="network-result"></div>
+      </div>
+
+      <div class="network-optin">
+        <h2 class="section-subtitle" data-i18n="network.hibp_title">🔓 Έλεγχος διαρροών email</h2>
+        <p class="muted" data-i18n="network.hibp_desc">Το HaveIBeenPwned πλέον απαιτεί πληρωμένο API key για αυτόματο έλεγχο — γι' αυτό αυτό το κουμπί απλά ανοίγει τον ιστότοπό τους στον browser σου, όπου μπορείς να το ελέγξεις μόνος/η σου. Δεν στέλνουμε το email σου πουθενά εμείς.</p>
+        <button class="btn btn-ghost" id="btn-hibp">🔓 Άνοιγμα HaveIBeenPwned</button>
       </div>
     </section>
 
@@ -225,8 +288,14 @@
           <p class="muted" data-i18n="report.desc">Χρειάζεται να έχετε τρέξει τουλάχιστον μία σάρωση και έναν έλεγχο ασφαλείας.</p>
         </div>
         <div class="actions">
+          <label class="checkbox-row roast-toggle">
+            <input type="checkbox" id="opt-roast-mode" />
+            <span data-i18n="report.roast_mode">🔥 Roast mode</span>
+          </label>
           <button class="btn btn-primary" id="btn-report-generate" data-i18n="report.generate">Δημιουργία αναφοράς</button>
           <button class="btn btn-ghost" id="btn-report-pdf" data-i18n="report.export_pdf" disabled>Εξαγωγή σε PDF</button>
+          <button class="btn btn-ghost" id="btn-report-json" data-i18n="report.export_json" disabled>Εξαγωγή JSON</button>
+          <button class="btn btn-ghost" id="btn-report-csv" data-i18n="report.export_csv" disabled>Εξαγωγή CSV</button>
         </div>
       </div>
 
@@ -235,7 +304,7 @@
       </div>
     </section>
 
-    <!-- ADMIN TAB (hidden, unlocked via Ctrl+Alt+A) -->
+    <!-- ADMIN TAB (hidden, unlocked via F10) -->
     <section class="panel" id="panel-admin">
       <div class="panel-header">
         <div>
@@ -256,7 +325,7 @@
   <div class="modal-overlay" id="admin-login-overlay" hidden>
     <div class="modal-box">
       <h2>🔒 Admin login</h2>
-      <p class="muted">Ctrl+Alt+A για να κλείσεις.</p>
+      <p class="muted">F10 για να κλείσεις.</p>
       <form id="admin-login-form">
         <input type="text" id="admin-username" placeholder="Username" autocomplete="off" />
         <input type="password" id="admin-password" placeholder="Password" autocomplete="off" />
@@ -268,6 +337,52 @@
       </form>
     </div>
   </div>
+  <!-- ONBOARDING (first run only) -->
+  <div class="modal-overlay" id="onboarding-overlay" hidden>
+    <div class="modal-box modal-wide">
+      <h2 data-i18n="onboarding.title">👋 Καλωσόρισες στο Electron Security V2</h2>
+      <p class="muted" data-i18n="onboarding.intro">Ένα εργαλείο καθαρισμού &amp; ασφάλειας που τρέχει 100% τοπικά στον υπολογιστή σου.</p>
+      <div class="onboarding-steps">
+        <div class="onboarding-step">
+          <div class="onboarding-step-icon">🔒</div>
+          <div>
+            <div class="onboarding-step-title" data-i18n="onboarding.step1_title">Ιδιωτικότητα πρώτα</div>
+            <div class="onboarding-step-text" data-i18n="onboarding.step1_text">Καμία σάρωση δεν στέλνεται πουθενά. Η μόνη σύνδεση στο διαδίκτυο γίνεται όταν πατήσεις εσύ το κουμπί στο Speed Test.</div>
+          </div>
+        </div>
+        <div class="onboarding-step">
+          <div class="onboarding-step-icon">🧹</div>
+          <div>
+            <div class="onboarding-step-title" data-i18n="onboarding.step2_title">Σάρωση &amp; Ασφάλεια</div>
+            <div class="onboarding-step-text" data-i18n="onboarding.step2_text">Η καρτέλα «Σάρωση» βρίσκει junk αρχεία προς καθαρισμό, η «Ασφάλεια» ελέγχει το σύστημά σου για ύποπτα σημεία.</div>
+          </div>
+        </div>
+        <div class="onboarding-step">
+          <div class="onboarding-step-icon">↩️</div>
+          <div>
+            <div class="onboarding-step-title" data-i18n="onboarding.step3_title">Καμία διαγραφή δεν είναι οριστική</div>
+            <div class="onboarding-step-text" data-i18n="onboarding.step3_text">Ό,τι διαγράφεις πάει πρώτα στον Κάδο Ασφαλείας και μπορεί να επαναφερθεί, εκτός αν επιλέξεις διαφορετικά.</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btn-onboarding-start" data-i18n="onboarding.start">Ξεκίνα</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHAT'S NEW (shown once after an update installs) -->
+  <div class="modal-overlay" id="whatsnew-overlay" hidden>
+    <div class="modal-box modal-wide">
+      <h2 data-i18n="whatsnew.title">✨ Τι νέο υπάρχει</h2>
+      <span class="whatsnew-version" id="whatsnew-version"></span>
+      <ul class="whatsnew-list" id="whatsnew-list"></ul>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btn-whatsnew-close" data-i18n="whatsnew.close">Ωραία!</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="statusbar">
     <span id="status-text">Έτοιμο. Καμία σύνδεση στο διαδίκτυο εκτός από το προαιρετικό speed test — όλα τα υπόλοιπα γίνονται τοπικά.</span>
   </footer>

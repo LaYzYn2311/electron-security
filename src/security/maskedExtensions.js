@@ -35,6 +35,8 @@ async function scanMaskedExtensions(ctx) {
           severity: 'critical',
           title: t(ctx.locale, 'masked.title', { name }),
           detail: t(ctx.locale, 'masked.detail', { path: entry.fullPath, safe: withoutLastExt }),
+          path: entry.fullPath,
+          isDirectory: false,
         });
       }
       ctx.onProgress?.({ category: 'masked_extension', current: entry.fullPath });

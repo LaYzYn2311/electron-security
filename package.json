@@ -1,7 +1,7 @@
 {
   "name": "system-cleaner-security-scanner",
   "productName": "Electron Security V2",
-  "version": "2.0.0",
+  "version": "2.6.0",
   "description": "Cross-platform desktop app that scans your disk for junk/duplicate files and common security misconfigurations, and lets you clean up safely with an undo window.",
   "main": "main.js",
   "author": "",
@@ -24,7 +24,10 @@
       "main.js",
       "preload.js",
       "src/**/*",
-      "renderer/**/*"
+      "renderer/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "build/icon.icns"
     ],
     "mac": {
       "category": "public.app-category.utilities",

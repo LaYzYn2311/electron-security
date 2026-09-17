@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
 const { platform } = require('../utils/platform');
+const { listProcesses } = require('../utils/processList');
 const { t } = require('../i18n');
 
 // Ports that are fine to see locally but worth flagging if reachable from
@@ -13,10 +14,10 @@ function parseWindowsNetstat(output) {
   const rows = [];
   const lines = output.split(/\r?\n/);
   for (const line of lines) {
-    const m = line.trim().match(/^(TCP|UDP)\s+(\S+):(\d+)\s+(\S+)\s+(LISTENING)?/i);
+    const m = line.trim().match(/^(TCP|UDP)\s+(\S+):(\d+)\s+(\S+)\s+(LISTENING)?\s*(\d+)?\s*$/i);
     if (!m) continue;
-    const [, proto, addr, portStr] = m;
-    rows.push({ proto, address: addr, port: Number(portStr) });
+    const [, proto, addr, portStr, , , pidStr] = m;
+    rows.push({ proto, address: addr, port: Number(portStr), pid: pidStr ? Number(pidStr) : null });
   }
   return rows;
 }
@@ -46,9 +47,14 @@ function parseUnixLsofOrSs(output, isSs) {
 async function scanOpenPorts(ctx) {
   try {
     let rows = [];
+    let pidToName = new Map();
     if (platform === 'win32') {
-      const { stdout } = await execFileAsync('netstat', ['-ano', '-p', 'TCP']);
+      const [{ stdout }, processes] = await Promise.all([
+        execFileAsync('netstat', ['-ano', '-p', 'TCP']),
+        listProcesses().catch(() => []),
+      ]);
       rows = parseWindowsNetstat(stdout);
+      pidToName = new Map(processes.map((p) => [p.pid, p.name]));
     } else if (platform === 'darwin') {
       const { stdout } = await execFileAsync('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n']);
       rows = parseUnixLsofOrSs(stdout, false);
@@ -88,6 +94,7 @@ async function scanOpenPorts(ctx) {
       if (exposedExternally && NOTABLE_PORTS.has(row.port)) severity = 'high';
       else if (exposedExternally) severity = 'low';
 
+      const processName = row.pid ? pidToName.get(row.pid) : null;
       findings.push({
         id: `port_${key}`,
         type: 'open_port',
@@ -95,7 +102,9 @@ async function scanOpenPorts(ctx) {
         title: exposedExternally
           ? t(ctx.locale, 'port.title_exposed', { port: row.port, proto: row.proto })
           : t(ctx.locale, 'port.title_local', { port: row.port, proto: row.proto }),
-        detail: t(ctx.locale, 'port.detail', { address: row.address, port: row.port }),
+        detail: processName
+          ? t(ctx.locale, 'port.detail_with_process', { address: row.address, port: row.port, process: processName, pid: row.pid })
+          : t(ctx.locale, 'port.detail', { address: row.address, port: row.port }),
       });
     }
     return findings;

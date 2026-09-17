@@ -56,6 +56,25 @@ function showToast({ title, body, tone = 'info', actions = [], autoDismissMs = 1
   return dismiss;
 }
 
+const CONFETTI_COLORS = ['#4f8dfd', '#7c6bfb', '#33c17a', '#e5b93f', '#f0475a'];
+
+function fireConfetti(count = 60) {
+  const container = document.createElement('div');
+  container.className = 'confetti-container';
+  document.body.appendChild(container);
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+    piece.style.animationDelay = `${Math.random() * 0.4}s`;
+    piece.style.animationDuration = `${1.8 + Math.random() * 1.2}s`;
+    piece.style.setProperty('--rot', `${Math.random() * 720 - 360}deg`);
+    container.appendChild(piece);
+  }
+  setTimeout(() => container.remove(), 3600);
+}
+
 function animateCountUp(el, target, duration = 700) {
   if (!el) return;
   const start = performance.now();
@@ -68,9 +87,9 @@ function animateCountUp(el, target, duration = 700) {
   requestAnimationFrame(tick);
 }
 
-const CATEGORY_ORDER = ['temp', 'logs', 'browser_cache', 'app_cache', 'trash', 'orphan_installer', 'empty_folder', 'duplicates', 'large_old'];
+const CATEGORY_ORDER = ['temp', 'logs', 'browser_cache', 'app_cache', 'trash', 'orphan_installer', 'empty_folder', 'uninstall_residue', 'duplicates', 'large_old'];
 const SAFE_CATEGORIES = ['temp', 'logs', 'browser_cache', 'app_cache', 'trash', 'orphan_installer', 'empty_folder'];
-const SECTION_ORDER = ['antivirus', 'firewall', 'hosts_file', 'browser_hijack', 'startup_items', 'scheduled_tasks', 'open_ports', 'file_permissions', 'browser_extensions', 'masked_extensions', 'outdated_apps'];
+const SECTION_ORDER = ['antivirus', 'firewall', 'fake_antivirus', 'disk_encryption', 'driver_inventory', 'rootkit_cross_view', 'process_masquerade', 'cheat_tools', 'remote_access_tools', 'root_certificates', 'proxy_hijack', 'hosts_file', 'browser_hijack', 'outbound_connections', 'open_ports', 'rdp', 'smbv1', 'startup_items', 'scheduled_tasks', 'shortcut_integrity', 'autorun', 'path_audit', 'local_accounts', 'screen_lock', 'file_permissions', 'browser_extensions', 'masked_extensions', 'outdated_apps', 'privacy_settings', 'privacy_access_log', 'live_access', 'onedrive_sync'];
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info', 'ok'];
 
 function categoryLabel(key) { return t(`category.${key}`); }
@@ -95,11 +114,39 @@ const state = {
   theme: loadPref('scs:theme', 'dark'),
 };
 
+// ---------- ignore list (scan items by path, security findings by id) ----------
+// Persisted client-side only (localStorage) — it's a per-viewer display
+// preference ("stop showing me this specific thing"), not a change to what
+// the scan actually detected. Deliberately does NOT affect totals, category
+// counts in the header, or the security severity legend/health score — an
+// ignored item is still real, it's just decluttered from the list you review.
+const IGNORED_PATHS_KEY = 'scs:ignored_paths';
+const IGNORED_FINDINGS_KEY = 'scs:ignored_findings';
+
+function loadIgnoreSet(key) {
+  try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch { return new Set(); }
+}
+function saveIgnoreSet(key, set) {
+  try { localStorage.setItem(key, JSON.stringify([...set])); } catch { /* private mode etc — ignore */ }
+}
+const ignoredPaths = loadIgnoreSet(IGNORED_PATHS_KEY);
+const ignoredFindings = loadIgnoreSet(IGNORED_FINDINGS_KEY);
+
+function ignorePath(p) { ignoredPaths.add(p); saveIgnoreSet(IGNORED_PATHS_KEY, ignoredPaths); }
+function ignoreFinding(id) { ignoredFindings.add(id); saveIgnoreSet(IGNORED_FINDINGS_KEY, ignoredFindings); }
+function clearIgnoredPaths() { ignoredPaths.clear(); saveIgnoreSet(IGNORED_PATHS_KEY, ignoredPaths); }
+function clearIgnoredFindings() { ignoredFindings.clear(); saveIgnoreSet(IGNORED_FINDINGS_KEY, ignoredFindings); }
+function visibleItems(cat) { return cat.items.filter((i) => !ignoredPaths.has(i.path)); }
+function visibleFindings(findings) { return findings.filter((f) => !ignoredFindings.has(f.id)); }
+
 // ---------- theme & language ----------
+const THEME_CYCLE = ['dark', 'light', 'retro'];
+const THEME_ICONS = { dark: '🌙', light: '☀️', retro: '🖥️' };
+
 function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('btn-theme-toggle').textContent = theme === 'dark' ? '🌙' : '☀️';
+  document.getElementById('btn-theme-toggle').textContent = THEME_ICONS[theme] || '🌙';
   savePref('scs:theme', theme);
 }
 
@@ -128,14 +175,56 @@ function refreshLocaleDependentUI() {
 }
 
 document.getElementById('btn-theme-toggle').addEventListener('click', () => {
-  applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+  const nextIndex = (THEME_CYCLE.indexOf(state.theme) + 1) % THEME_CYCLE.length;
+  applyTheme(THEME_CYCLE[nextIndex]);
 });
 
 document.getElementById('btn-lang-toggle').addEventListener('click', () => {
   state.locale = state.locale === 'el' ? 'en' : 'el';
   savePref('scs:locale', state.locale);
+  window.api.setLocale(state.locale);
   refreshLocaleDependentUI();
 });
+
+window.api.setLocale(state.locale);
+
+// ================= ONBOARDING / WHAT'S NEW =================
+const ONBOARDING_SEEN_KEY = 'scs:onboarding_seen';
+const LAST_SEEN_VERSION_KEY = 'scs:last_seen_version';
+
+async function runFirstRunChecks() {
+  const version = await window.api.getAppVersion();
+  const onboardingSeen = loadPref(ONBOARDING_SEEN_KEY, '');
+  const lastSeenVersion = loadPref(LAST_SEEN_VERSION_KEY, '');
+
+  if (!onboardingSeen) {
+    const overlay = document.getElementById('onboarding-overlay');
+    overlay.hidden = false;
+    document.getElementById('btn-onboarding-start').addEventListener('click', () => {
+      overlay.hidden = true;
+      savePref(ONBOARDING_SEEN_KEY, '1');
+      savePref(LAST_SEEN_VERSION_KEY, version);
+    }, { once: true });
+    return; // don't also show What's New on the very first run
+  }
+
+  if (lastSeenVersion && lastSeenVersion !== version) {
+    const changelog = await window.api.getChangelog(version);
+    if (changelog) {
+      const list = changelog[state.locale] || changelog.en || [];
+      const overlay = document.getElementById('whatsnew-overlay');
+      document.getElementById('whatsnew-version').textContent = `v${version}`;
+      document.getElementById('whatsnew-list').innerHTML = list.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+      overlay.hidden = false;
+      document.getElementById('btn-whatsnew-close').addEventListener('click', () => {
+        overlay.hidden = true;
+      }, { once: true });
+    }
+  }
+  savePref(LAST_SEEN_VERSION_KEY, version);
+}
+
+runFirstRunChecks();
 
 // ---------- tabs ----------
 document.getElementById('tabs').addEventListener('click', (e) => {
@@ -145,6 +234,9 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${btn.dataset.tab}`));
   if (btn.dataset.tab === 'quarantine') { refreshQuarantine(); refreshLog(); }
   if (btn.dataset.tab === 'admin' && adminUnlocked) loadAdminPanel();
+  if (btn.dataset.tab === 'network') {
+    document.getElementById('outbound-geolocate-wrap').hidden = !state.securityResult?.sections?.outbound_connections;
+  }
 });
 
 // ================= SCAN =================
@@ -169,6 +261,7 @@ scanStartBtn.addEventListener('click', async () => {
   scanProgressFill.style.width = '0%';
   scanProgressLabel.textContent = t('status.scan_start_label');
   setStatus(t('status.scanning'));
+  startFunFacts('scan-fun-fact');
 
   const off = window.api.onScanProgress((data) => {
     if (data.stage === 'done') {
@@ -184,11 +277,13 @@ scanStartBtn.addEventListener('click', async () => {
     const result = await window.api.scanStart(state.locale);
     state.scanResult = result;
     renderScanResult(result);
+    if (!result.cancelled) compareWithLastScan(result);
     setStatus(result.cancelled ? t('status.scan_cancelled') : t('status.scan_done'));
   } catch (err) {
     setStatus(t('status.scan_error', { msg: err.message }));
   } finally {
     off();
+    stopFunFacts('scan-fun-fact');
     scanStartBtn.disabled = false;
     scanCancelBtn.disabled = true;
     scanProgressWrap.hidden = true;
@@ -225,6 +320,24 @@ contextMenuBtn.addEventListener('click', async () => {
 
 refreshContextMenuButton();
 
+// ---- Tray: periodic background scan toggle ----
+const bgScanCheckbox = document.getElementById('opt-bg-scan');
+if (bgScanCheckbox) {
+  window.api.getBackgroundScanEnabled().then((enabled) => { bgScanCheckbox.checked = enabled; });
+  bgScanCheckbox.addEventListener('change', () => {
+    window.api.setBackgroundScanEnabled(bgScanCheckbox.checked);
+  });
+}
+window.api.onBackgroundScanResult?.((result) => {
+  if (!result || result.totalFreeable <= 0) return;
+  showToast({
+    title: t('tray.bg_scan_notif_title'),
+    body: t('tray.bg_scan_notif_body', { mb: Math.round(result.totalFreeable / (1024 * 1024)) }),
+    tone: 'info',
+    autoDismissMs: 10000,
+  });
+});
+
 // ---- Scoped scan triggered from Explorer's right-click menu ----
 const scopedScanBanner = document.getElementById('scoped-scan-banner');
 
@@ -253,6 +366,7 @@ window.api.onScanTargetFolder(async (folderPath) => {
     renderScanResult(result);
     scopedScanBanner.hidden = false;
     scopedScanBanner.innerHTML = `<span>${escapeHtml(t('scan.scoped_banner', { path: folderPath }))}</span>`;
+    savePref(ACHV_USED_SCOPED_SCAN_KEY, '1');
     setStatus(t('status.scan_done'));
   } catch (err) {
     setStatus(t('status.scan_error', { msg: err.message }));
@@ -263,6 +377,27 @@ window.api.onScanTargetFolder(async (folderPath) => {
     scanProgressWrap.hidden = true;
   }
 });
+
+// ---------- rotating trivia during scans ----------
+const FUN_FACT_COUNT = 10;
+let funFactTimer = null;
+
+function startFunFacts(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const order = Array.from({ length: FUN_FACT_COUNT }, (_, i) => i + 1).sort(() => Math.random() - 0.5);
+  let i = 0;
+  const show = () => { el.textContent = '💡 ' + t(`funfact.${order[i % order.length]}`); i += 1; };
+  show();
+  clearInterval(funFactTimer);
+  funFactTimer = setInterval(show, 4500);
+}
+function stopFunFacts(elementId) {
+  clearInterval(funFactTimer);
+  funFactTimer = null;
+  const el = document.getElementById(elementId);
+  if (el) el.textContent = '';
+}
 
 function truncateMiddle(str, max) {
   if (str.length <= max) return str;
@@ -276,9 +411,12 @@ function renderScanResult(result) {
   scanCategoriesEl.innerHTML = '';
 
   let cardIndex = 0;
+  let totalIgnored = 0;
   for (const key of CATEGORY_ORDER) {
     const cat = result.categories[key];
-    if (!cat || cat.items.length === 0) continue;
+    if (!cat) continue;
+    totalIgnored += cat.items.length - visibleItems(cat).length;
+    if (visibleItems(cat).length === 0) continue;
     const card = buildCategoryCard(key, cat);
     card.style.animationDelay = `${cardIndex * 40}ms`;
     cardIndex += 1;
@@ -287,6 +425,63 @@ function renderScanResult(result) {
   if (scanCategoriesEl.children.length === 0) {
     scanCategoriesEl.innerHTML = `<div class="empty-note">${escapeHtml(t('scan.empty'))}</div>`;
   }
+  renderIgnoredNote(scanCategoriesEl, totalIgnored, () => { clearIgnoredPaths(); renderScanResult(state.scanResult); });
+}
+
+function renderIgnoredNote(container, count, onClear) {
+  if (count <= 0) return;
+  const note = document.createElement('div');
+  note.className = 'ignored-note';
+  note.innerHTML = `<span>${escapeHtml(t('ignore.hidden_count', { n: count }))}</span> <button type="button" class="btn-link">${escapeHtml(t('ignore.clear'))}</button>`;
+  note.querySelector('.btn-link').addEventListener('click', onClear);
+  container.appendChild(note);
+}
+
+// ---------- compare with last scan ----------
+const LAST_SCAN_SNAPSHOT_KEY = 'scs:last_scan_snapshot';
+const SNAPSHOT_MAX_PATHS_PER_CATEGORY = 3000;
+
+function loadLastScanSnapshot() {
+  try { return JSON.parse(localStorage.getItem(LAST_SCAN_SNAPSHOT_KEY) || 'null'); } catch { return null; }
+}
+function saveScanSnapshot(result) {
+  const snapshot = { scannedAt: new Date().toISOString(), totalFreeable: result.totalFreeable, categoryPaths: {} };
+  for (const [key, cat] of Object.entries(result.categories || {})) {
+    snapshot.categoryPaths[key] = cat.items.slice(0, SNAPSHOT_MAX_PATHS_PER_CATEGORY).map((i) => i.path);
+  }
+  try { localStorage.setItem(LAST_SCAN_SNAPSHOT_KEY, JSON.stringify(snapshot)); } catch { /* private mode etc — ignore */ }
+}
+function formatSignedBytes(bytes) {
+  const sign = bytes > 0 ? '+' : bytes < 0 ? '−' : '';
+  return sign + formatBytes(Math.abs(bytes));
+}
+
+function compareWithLastScan(result) {
+  const banner = document.getElementById('scan-diff-banner');
+  const prev = loadLastScanSnapshot();
+  if (prev) {
+    const prevPaths = new Set(Object.values(prev.categoryPaths).flat());
+    const currentPaths = new Set(Object.values(result.categories || {}).flatMap((c) => c.items.map((i) => i.path)));
+    let added = 0;
+    let removed = 0;
+    for (const p of currentPaths) if (!prevPaths.has(p)) added += 1;
+    for (const p of prevPaths) if (!currentPaths.has(p)) removed += 1;
+
+    if (added === 0 && removed === 0) {
+      banner.hidden = true;
+    } else {
+      banner.hidden = false;
+      banner.innerHTML = `<span>${escapeHtml(t('scan.diff_summary', {
+        added,
+        removed,
+        date: new Date(prev.scannedAt).toLocaleString(localeTag()),
+        delta: formatSignedBytes(result.totalFreeable - prev.totalFreeable),
+      }))}</span>`;
+    }
+  } else {
+    banner.hidden = true;
+  }
+  saveScanSnapshot(result);
 }
 
 function buildCategoryCard(key, cat) {
@@ -294,22 +489,28 @@ function buildCategoryCard(key, cat) {
   card.className = 'category-card';
   card.dataset.category = key;
 
+  const items = visibleItems(cat);
+  const visibleSize = items.reduce((s, i) => s + i.size, 0);
+
   const head = document.createElement('div');
   head.className = 'category-head';
   head.innerHTML = `
     <input type="checkbox" class="cat-checkbox" />
     <span class="category-title">${escapeHtml(categoryLabel(key))}</span>
-    <span class="category-meta">${escapeHtml(t('scan.items_count', { count: cat.items.length, size: formatBytes(cat.totalSize) }))}</span>
+    <span class="category-meta">${escapeHtml(t('scan.items_count', { count: items.length, size: formatBytes(visibleSize) }))}</span>
     <span class="category-chevron">▶</span>
   `;
   card.appendChild(head);
 
   const itemsWrap = document.createElement('div');
   itemsWrap.className = 'category-items';
-  const sorted = [...cat.items].sort((a, b) => b.size - a.size);
+  if (key === 'large_old' && items.length > 0) {
+    itemsWrap.appendChild(buildFileTypeBreakdown(items));
+  }
+  const sorted = [...items].sort((a, b) => b.size - a.size);
   const RENDER_CAP = 300;
   for (const item of sorted.slice(0, RENDER_CAP)) {
-    itemsWrap.appendChild(buildItemRow(item));
+    itemsWrap.appendChild(buildItemRow(item, key));
   }
   if (sorted.length > RENDER_CAP) {
     const more = document.createElement('div');
@@ -330,7 +531,7 @@ function buildCategoryCard(key, cat) {
     // For duplicates, "select all" means "select all but the one copy worth keeping" —
     // ticking the category checkbox shouldn't make the user hunt down and uncheck the
     // keeper in every single group by hand.
-    for (const item of cat.items) {
+    for (const item of items) {
       const shouldSelect = catCheckbox.checked && !(key === 'duplicates' && item.keepSuggested);
       toggleSelection(item, shouldSelect, false);
     }
@@ -344,15 +545,59 @@ function buildCategoryCard(key, cat) {
   return card;
 }
 
-function buildItemRow(item) {
+const FILE_TYPE_GROUPS = [
+  { key: 'videos', re: /\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v)$/i, color: '#f0475a' },
+  { key: 'archives', re: /\.(zip|rar|7z|tar|gz|iso)$/i, color: '#e5b93f' },
+  { key: 'installers', re: /\.(exe|msi|dmg|pkg)$/i, color: '#7c6bfb' },
+  { key: 'images', re: /\.(jpg|jpeg|png|gif|webp|bmp|heic|raw)$/i, color: '#33c17a' },
+  { key: 'documents', re: /\.(pdf|docx?|xlsx?|pptx?|txt)$/i, color: '#4f8dfd' },
+];
+
+function buildFileTypeBreakdown(items) {
+  const totals = new Map();
+  let other = 0;
+  for (const item of items) {
+    const group = FILE_TYPE_GROUPS.find((g) => g.re.test(item.path));
+    if (group) totals.set(group.key, (totals.get(group.key) || 0) + item.size);
+    else other += item.size;
+  }
+  const totalSize = items.reduce((s, i) => s + i.size, 0) || 1;
+  const segments = FILE_TYPE_GROUPS
+    .map((g) => ({ ...g, size: totals.get(g.key) || 0 }))
+    .concat({ key: 'other', color: '#9aa1b2', size: other })
+    .filter((s) => s.size > 0);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'filetype-breakdown';
+  wrap.innerHTML = `
+    <div class="filetype-bar">${segments.map((s) => `<span style="width:${(s.size / totalSize) * 100}%;background:${s.color}" title="${escapeHtml(t(`filetype.${s.key}`))}: ${formatBytes(s.size)}"></span>`).join('')}</div>
+    <div class="filetype-legend">
+      ${segments.map((s) => `<span class="filetype-legend-item"><span class="dot" style="background:${s.color}"></span>${escapeHtml(t(`filetype.${s.key}`))}: ${formatBytes(s.size)}</span>`).join('')}
+    </div>
+  `;
+  return wrap;
+}
+
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|bmp)$/i;
+
+function buildItemRow(item, categoryKey) {
   const row = document.createElement('div');
   row.className = 'item-row';
   const showNote = item.groupSize && item.keepSuggested;
+  const isImage = categoryKey === 'duplicates' && IMAGE_EXT_RE.test(item.path);
+  const thumbHtml = isImage
+    ? `<img class="item-thumb" src="file:///${encodeURI(item.path.replace(/\\/g, '/'))}" loading="lazy" alt="" />`
+    : '';
   row.innerHTML = `
     <input type="checkbox" class="item-checkbox" />
+    ${thumbHtml}
     <span class="item-path" title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</span>
     <span class="item-size">${formatBytes(item.size)}</span>
   `;
+  if (isImage) {
+    const img = row.querySelector('.item-thumb');
+    img.addEventListener('error', () => img.remove());
+  }
   if (showNote) {
     const n = document.createElement('span');
     n.className = 'item-note';
@@ -364,6 +609,20 @@ function buildItemRow(item) {
   cb.addEventListener('change', () => {
     toggleSelection(item, cb.checked, true);
   });
+
+  const ignoreBtn = document.createElement('button');
+  ignoreBtn.type = 'button';
+  ignoreBtn.className = 'item-ignore-btn';
+  ignoreBtn.title = t('ignore.item_title');
+  ignoreBtn.textContent = '🚫';
+  ignoreBtn.addEventListener('click', () => {
+    ignorePath(item.path);
+    state.selection.delete(item.id);
+    renderScanResult(state.scanResult);
+    refreshCleanupTab();
+  });
+  row.appendChild(ignoreBtn);
+
   return row;
 }
 
@@ -378,7 +637,7 @@ document.getElementById('btn-select-safe').addEventListener('click', () => {
   for (const key of SAFE_CATEGORIES) {
     const cat = state.scanResult.categories[key];
     if (!cat) continue;
-    for (const item of cat.items) state.selection.set(item.id, item);
+    for (const item of visibleItems(cat)) state.selection.set(item.id, item);
   }
   renderScanResult(state.scanResult);
   syncCheckboxesFromSelection();
@@ -397,7 +656,8 @@ function syncCheckboxesFromSelection() {
     const key = card.dataset.category;
     const cat = state.scanResult.categories[key];
     if (!cat) return;
-    const allSelected = cat.items.length > 0 && cat.items.every((i) => state.selection.has(i.id));
+    const items = visibleItems(cat);
+    const allSelected = items.length > 0 && items.every((i) => state.selection.has(i.id));
     card.querySelector('.cat-checkbox').checked = allSelected;
   });
 }
@@ -422,6 +682,7 @@ secStartBtn.addEventListener('click', async () => {
   secStepsDone = 0;
   secProgressFill.style.width = '0%';
   setStatus(t('status.sec_scanning'));
+  startFunFacts('sec-fun-fact');
 
   const off = window.api.onSecurityProgress((data) => {
     if (data.stage === 'done') {
@@ -440,6 +701,7 @@ secStartBtn.addEventListener('click', async () => {
     setStatus(t('status.sec_error', { msg: err.message }));
   } finally {
     off();
+    stopFunFacts('sec-fun-fact');
     secStartBtn.disabled = false;
     secCancelBtn.disabled = true;
     secProgressWrap.hidden = true;
@@ -456,18 +718,22 @@ function renderSecurityResult(result) {
 
   secSectionsEl.innerHTML = '';
   let sectionIndex = 0;
+  let totalIgnored = 0;
   for (const key of SECTION_ORDER) {
     const section = result.sections[key];
     if (!section) continue;
+    totalIgnored += section.findings.length - visibleFindings(section.findings).length;
     const el = buildSecSection(key, section);
     el.style.animationDelay = `${sectionIndex * 40}ms`;
     sectionIndex += 1;
     secSectionsEl.appendChild(el);
   }
+  renderIgnoredNote(secSectionsEl, totalIgnored, () => { clearIgnoredFindings(); renderSecurityResult(state.securityResult); });
 }
 
 function buildSecSection(key, section) {
-  const worst = section.findings.reduce((acc, f) => {
+  const findings = visibleFindings(section.findings);
+  const worst = findings.reduce((acc, f) => {
     const idx = SEVERITY_ORDER.indexOf(f.severity);
     return idx < acc ? idx : acc;
   }, SEVERITY_ORDER.length - 1);
@@ -480,23 +746,39 @@ function buildSecSection(key, section) {
   head.innerHTML = `
     <span class="badge ${worstSeverity}">${escapeHtml(severityLabel(worstSeverity))}</span>
     <span class="sec-section-title">${escapeHtml(sectionLabel(key))}</span>
-    <span class="category-meta">${escapeHtml(t('security.findings_count', { n: section.findings.length }))}</span>
+    <span class="category-meta">${escapeHtml(t('security.findings_count', { n: findings.length }))}</span>
     <span class="category-chevron">▶</span>
   `;
   el.appendChild(head);
 
   const items = document.createElement('div');
   items.className = 'sec-section-items';
-  if (section.findings.length === 0) {
+  if (findings.length === 0) {
     items.innerHTML = `<div class="empty-note">${escapeHtml(t('security.empty'))}</div>`;
   } else {
-    for (const f of section.findings) {
+    for (const f of findings) {
       const row = document.createElement('div');
       row.className = 'finding-row';
+      const actionable = f.path && (f.type === 'startup_item' || f.type === 'masked_extension' || f.type === 'shortcut_integrity');
       row.innerHTML = `
         <div class="finding-title"><span class="badge ${f.severity}">${escapeHtml(severityLabel(f.severity))}</span>${escapeHtml(f.title)}</div>
         ${f.detail ? `<div class="finding-detail">${escapeHtml(f.detail)}</div>` : ''}
+        <div class="finding-actions">
+          ${actionable ? `<button type="button" class="btn btn-small btn-danger finding-action-btn">${escapeHtml(t('security.quarantine_action'))}</button>` : ''}
+          ${f.severity !== 'ok' ? `<button type="button" class="btn btn-small btn-ghost finding-ignore-btn">🚫 ${escapeHtml(t('ignore.finding_action'))}</button>` : ''}
+        </div>
       `;
+      if (actionable) {
+        const actionBtn = row.querySelector('.finding-action-btn');
+        actionBtn.addEventListener('click', () => quarantineSecurityFinding(f, actionBtn));
+      }
+      const ignoreBtn = row.querySelector('.finding-ignore-btn');
+      if (ignoreBtn) {
+        ignoreBtn.addEventListener('click', () => {
+          ignoreFinding(f.id);
+          renderSecurityResult(state.securityResult);
+        });
+      }
       items.appendChild(row);
     }
   }
@@ -508,6 +790,30 @@ function buildSecSection(key, section) {
   });
 
   return el;
+}
+
+async function quarantineSecurityFinding(finding, btn) {
+  if (!window.confirm(t('security.quarantine_confirm', { path: finding.path }))) return;
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = t('cleanup.running');
+  try {
+    const item = { id: finding.id, path: finding.path, size: 0, category: 'security_finding', isDirectory: !!finding.isDirectory };
+    const result = await window.api.cleanupRun({ items: [item], useQuarantine: true, retentionDays: 30, createRestorePointFirst: false, locale: state.locale });
+    if (result.moved?.length) {
+      showToast({ title: t('security.quarantine_success_title'), body: t('security.quarantine_success_body', { path: finding.path }), tone: 'ok', autoDismissMs: 6000 });
+      btn.textContent = t('security.quarantine_done');
+    } else {
+      const reason = result.errors?.[0]?.error || '?';
+      showToast({ title: t('security.quarantine_failed_title'), body: reason, tone: 'warning', autoDismissMs: 8000 });
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  } catch (err) {
+    showToast({ title: t('security.quarantine_failed_title'), body: err.message, tone: 'warning', autoDismissMs: 8000 });
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
 }
 
 // ================= SPEEDTEST =================
@@ -614,6 +920,20 @@ function renderSpeedHistory() {
   const list = loadSpeedHistory();
   if (list.length === 0) { wrap.hidden = true; return; }
   wrap.hidden = false;
+
+  // Honest framing given the history only keeps a handful of entries: this
+  // names the single fastest *recorded* run's hour, not a statistical trend
+  // — there isn't enough data for that, and claiming otherwise would be the
+  // kind of fake precision the rest of the app avoids.
+  const bestTimeNote = document.getElementById('speed-best-time');
+  if (list.length >= 3) {
+    const fastest = list.reduce((a, b) => (b.downloadMbps > a.downloadMbps ? b : a));
+    bestTimeNote.hidden = false;
+    bestTimeNote.textContent = t('speedtest.best_time', { hour: new Date(fastest.testedAt).getHours() });
+  } else {
+    bestTimeNote.hidden = true;
+  }
+
   el.innerHTML = list.map((h, i) => `
     <div class="speed-history-row" style="animation-delay:${i * 40}ms">
       <span class="speed-history-time">${new Date(h.testedAt).toLocaleString(localeTag(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -714,6 +1034,142 @@ buildGaugeTicks();
 resetGauge();
 renderSpeedHistory();
 
+// ================= PERFORMANCE =================
+document.getElementById('btn-perf-refresh').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-perf-refresh');
+  const content = document.getElementById('perf-content');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = t('performance.loading');
+  try {
+    const data = await window.api.getTopProcesses();
+    renderPerformance(data);
+  } catch (err) {
+    content.innerHTML = `<p class="muted">${escapeHtml(t('status.scan_error', { msg: err.message }))}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+
+function renderPerformance(data) {
+  const content = document.getElementById('perf-content');
+  if (!data.supported) {
+    content.innerHTML = `<p class="muted">${escapeHtml(t('performance.unsupported'))}</p>`;
+    return;
+  }
+  const cpuRows = data.topCpu.map((p) => `
+    <div class="perf-row">
+      <span class="perf-name" title="${escapeHtml(p.Name)}">${escapeHtml(p.Name)}</span>
+      <span class="perf-pid">PID ${p.Pid}</span>
+      <span class="perf-value">${p.CpuPct.toFixed(1)}%</span>
+    </div>`).join('');
+  const memRows = data.topMem.map((p) => `
+    <div class="perf-row">
+      <span class="perf-name" title="${escapeHtml(p.Name)}">${escapeHtml(p.Name)}</span>
+      <span class="perf-pid">PID ${p.Pid}</span>
+      <span class="perf-value">${formatBytes(p.MemBytes)}</span>
+    </div>`).join('');
+
+  content.innerHTML = `
+    <p class="muted perf-note">${escapeHtml(t('performance.cores_note', { cores: data.cores }))}</p>
+    <div class="perf-columns">
+      <div class="perf-col">
+        <h2 class="section-subtitle">${escapeHtml(t('performance.top_cpu'))}</h2>
+        ${cpuRows || `<p class="muted">${escapeHtml(t('performance.empty'))}</p>`}
+      </div>
+      <div class="perf-col">
+        <h2 class="section-subtitle">${escapeHtml(t('performance.top_mem'))}</h2>
+        ${memRows || `<p class="muted">${escapeHtml(t('performance.empty'))}</p>`}
+      </div>
+    </div>
+  `;
+}
+
+// ================= NETWORK =================
+document.getElementById('btn-network-refresh').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-network-refresh');
+  const content = document.getElementById('network-local-content');
+  btn.disabled = true;
+  try {
+    const data = await window.api.getLocalNetworkInfo();
+    renderLocalNetworkInfo(data);
+  } catch (err) {
+    content.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function renderLocalNetworkInfo(data) {
+  const content = document.getElementById('network-local-content');
+  if (data.error || !data.adapters) {
+    content.innerHTML = `<p class="muted">${escapeHtml(t('network.local_unavailable'))}</p>`;
+    return;
+  }
+  const adapterRows = data.adapters.map((a) => `
+    <div class="net-adapter-row">
+      <div class="net-adapter-name">${escapeHtml(a.Name)}</div>
+      <div class="net-adapter-desc">${escapeHtml(a.Description || '')}</div>
+      <div class="net-adapter-grid">
+        <span class="dim">${escapeHtml(t('network.local_ip'))}</span><span>${escapeHtml(a.IPv4 || '—')}</span>
+        <span class="dim">${escapeHtml(t('network.gateway'))}</span><span>${escapeHtml(a.Gateway || '—')}</span>
+        <span class="dim">${escapeHtml(t('network.dns'))}</span><span>${escapeHtml(a.DNS || '—')}</span>
+      </div>
+    </div>
+  `).join('');
+  const vpnLine = data.vpnDetected
+    ? `<div class="net-vpn-status active">${escapeHtml(t('network.vpn_active', { names: data.vpnAdapterNames.join(', ') }))}</div>`
+    : `<div class="net-vpn-status">${escapeHtml(t('network.vpn_inactive'))}</div>`;
+  content.innerHTML = vpnLine + (adapterRows || `<p class="muted">${escapeHtml(t('network.no_adapters'))}</p>`);
+}
+
+document.getElementById('btn-public-ip').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-public-ip');
+  const result = document.getElementById('public-ip-result');
+  btn.disabled = true;
+  result.textContent = t('network.checking');
+  try {
+    const data = await window.api.getPublicIp();
+    if (data.error) { result.textContent = t('network.lookup_failed', { msg: data.error }); return; }
+    result.innerHTML = `
+      <div class="net-ip-card">
+        <div class="net-ip-value">${escapeHtml(data.ip)}</div>
+        <div class="net-ip-meta">${escapeHtml([data.city, data.region, data.country].filter(Boolean).join(', '))}</div>
+        <div class="net-ip-meta dim">${escapeHtml(data.org || '')}</div>
+      </div>`;
+  } catch (err) {
+    result.textContent = t('network.lookup_failed', { msg: err.message });
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn-geolocate-outbound').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-geolocate-outbound');
+  const result = document.getElementById('geolocate-result');
+  const section = state.securityResult?.sections?.outbound_connections;
+  const ips = [...new Set((section?.findings || []).map((f) => f.id.split('_').pop()).filter((s) => /^\d+\.\d+\.\d+\.\d+$/.test(s)))];
+  if (ips.length === 0) { result.textContent = t('network.no_outbound_ips'); return; }
+  btn.disabled = true;
+  result.textContent = t('network.checking');
+  try {
+    const results = await window.api.geolocateIps(ips);
+    result.innerHTML = results.map((r) => r.error
+      ? `<div class="net-geo-row">${escapeHtml(r.ip)} — ${escapeHtml(r.error)}</div>`
+      : `<div class="net-geo-row"><b>${escapeHtml(r.ip)}</b> — ${escapeHtml([r.city, r.region, r.country].filter(Boolean).join(', '))} <span class="dim">${escapeHtml(r.org || '')}</span></div>`
+    ).join('');
+  } catch (err) {
+    result.textContent = t('network.lookup_failed', { msg: err.message });
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn-hibp').addEventListener('click', () => {
+  window.api.openExternal('https://haveibeenpwned.com/');
+});
+
 // ================= CLEANUP =================
 const cleanupListEl = document.getElementById('cleanup-list');
 const cleanupFooter = document.getElementById('cleanup-footer');
@@ -805,6 +1261,7 @@ document.getElementById('btn-cleanup-run').addEventListener('click', async () =>
       <div class="empty-note" style="background:#13332633;border:1px solid var(--ok);border-radius:8px;">
         ${escapeHtml(successMsg)}${errCount ? escapeHtml(t('cleanup.success_errors', { n: errCount })) : ''}
       </div>`;
+    if (doneCount > 0) fireConfetti(30);
 
     if (createRestorePointFirst) {
       if (result.restorePoint?.created) {
@@ -876,6 +1333,7 @@ async function refreshQuarantine() {
     `;
     card.querySelector('[data-action="restore"]').addEventListener('click', async () => {
       await window.api.quarantineRestore(batch.batchId, state.locale);
+      savePref(ACHV_USED_RESTORE_KEY, '1');
       setStatus(t('status.restored'));
       refreshQuarantine();
       refreshLog();
@@ -951,13 +1409,99 @@ document.getElementById('btn-report-generate').addEventListener('click', async (
   renderReport(report);
   addHealthHistoryEntry({ testedAt: report.generatedAt, score: report.healthScore });
   document.getElementById('btn-report-pdf').disabled = false;
+  document.getElementById('btn-report-json').disabled = false;
+  document.getElementById('btn-report-csv').disabled = false;
   setStatus(t('status.report_done'));
+});
+
+document.getElementById('btn-report-json').addEventListener('click', async () => {
+  if (!state.reportData) return;
+  const payload = { report: state.reportData, scanResult: state.scanResult, securityResult: state.securityResult, exportedAt: new Date().toISOString() };
+  const result = await window.api.reportExportJson(payload, state.locale);
+  if (result.canceled) { setStatus(t('status.export_cancelled')); return; }
+  setStatus(t('status.export_saved', { path: result.filePath }));
+  window.api.showInFolder(result.filePath);
+});
+
+document.getElementById('btn-report-csv').addEventListener('click', async () => {
+  if (!state.reportData) return;
+  const result = await window.api.reportExportCsv({ scanResult: state.scanResult, securityResult: state.securityResult }, state.locale);
+  if (result.canceled) { setStatus(t('status.export_cancelled')); return; }
+  setStatus(t('status.export_saved', { path: result.filePath }));
+  window.api.showInFolder(result.filePath);
 });
 
 function scoreColor(score) {
   if (score >= 80) return '#33c17a';
   if (score >= 50) return '#e5b93f';
   return '#f0475a';
+}
+
+function mascotForScore(score) {
+  if (score >= 95) return '🥳';
+  if (score >= 80) return '😊';
+  if (score >= 50) return '😟';
+  return '😱';
+}
+
+const ROAST_LINE_COUNTS = { critical: 3, high: 3, medium: 3, low: 2, cleanup: 3 };
+function roastLineFor(rec) {
+  const bucket = ROAST_LINE_COUNTS[rec.severity] ? rec.severity : 'cleanup';
+  const count = ROAST_LINE_COUNTS[bucket];
+  const idx = (rec.priority % count) + 1;
+  return t(`roast.${bucket}.${idx}`);
+}
+
+document.getElementById('opt-roast-mode').addEventListener('change', () => {
+  if (state.reportData) renderReport(state.reportData);
+});
+
+// ---------- achievements ----------
+const ACHV_USED_SCOPED_SCAN_KEY = 'scs:achv_used_scoped_scan';
+const ACHV_USED_RESTORE_KEY = 'scs:achv_used_restore';
+const ACHV_DUPLICATE_HUNTER_GOAL = 20;
+const ACHV_NEAT_FREAK_GOAL_BYTES = 5 * 1024 ** 3;
+const ACHV_SPEED_RUNNER_GOAL = 5;
+
+async function computeAchievements() {
+  const healthHistory = loadHealthHistory();
+  const speedHistory = loadSpeedHistory();
+  let cleanupLog = [];
+  try { cleanupLog = await window.api.cleanupLog(); } catch { /* ignore */ }
+
+  let totalCleanedBytes = 0;
+  let duplicatesCleaned = 0;
+  for (const entry of cleanupLog) {
+    totalCleanedBytes += entry.totalSize || 0;
+    for (const item of entry.items || []) {
+      if (item.category === 'duplicates') duplicatesCleaned += 1;
+    }
+  }
+  const perfectScore = healthHistory.some((h) => h.score === 100);
+  const nightOwl = healthHistory.some((h) => { const hr = new Date(h.testedAt).getHours(); return hr >= 0 && hr < 5; });
+
+  return [
+    { id: 'first_scan', icon: '🔎', earned: healthHistory.length >= 1 },
+    { id: 'duplicate_hunter', icon: '🕵️', earned: duplicatesCleaned >= ACHV_DUPLICATE_HUNTER_GOAL, progress: `${Math.min(duplicatesCleaned, ACHV_DUPLICATE_HUNTER_GOAL)}/${ACHV_DUPLICATE_HUNTER_GOAL}` },
+    { id: 'neat_freak', icon: '🧹', earned: totalCleanedBytes >= ACHV_NEAT_FREAK_GOAL_BYTES, progress: formatBytes(totalCleanedBytes) },
+    { id: 'perfect_score', icon: '💯', earned: perfectScore },
+    { id: 'speed_runner', icon: '⚡', earned: speedHistory.length >= ACHV_SPEED_RUNNER_GOAL, progress: `${Math.min(speedHistory.length, ACHV_SPEED_RUNNER_GOAL)}/${ACHV_SPEED_RUNNER_GOAL}` },
+    { id: 'night_owl', icon: '🦉', earned: nightOwl },
+    { id: 'explorer', icon: '🗂️', earned: loadPref(ACHV_USED_SCOPED_SCAN_KEY, '') === '1' },
+    { id: 'safety_net', icon: '🛟', earned: loadPref(ACHV_USED_RESTORE_KEY, '') === '1' },
+  ];
+}
+
+async function renderAchievements() {
+  const container = document.getElementById('achievements-shelf');
+  if (!container) return;
+  const achievements = await computeAchievements();
+  container.innerHTML = achievements.map((a) => `
+    <div class="achv-badge ${a.earned ? 'earned' : 'locked'}" title="${escapeHtml(t(`achv.${a.id}_desc`))}${a.progress ? ` (${a.progress})` : ''}">
+      <div class="achv-icon">${a.earned ? a.icon : '🔒'}</div>
+      <div class="achv-name">${escapeHtml(t(`achv.${a.id}_name`))}</div>
+    </div>
+  `).join('');
 }
 
 function renderReport(report) {
@@ -967,6 +1511,7 @@ function renderReport(report) {
   el.innerHTML = `
     <div class="score-row">
       <div class="score-circle" style="border-color:${scoreColor(report.healthScore)}">
+        <div class="score-mascot" id="score-mascot" title="${escapeHtml(t('report.mascot_title'))}"></div>
         <div class="score-value" id="score-value">0</div>
         <div class="score-caption">${escapeHtml(t('report.score_caption'))}</div>
       </div>
@@ -988,6 +1533,7 @@ function renderReport(report) {
             <div>
               <div class="rec-text">${escapeHtml(r.text)}</div>
               ${r.detail ? `<div class="rec-detail">${escapeHtml(r.detail)}</div>` : ''}
+              ${document.getElementById('opt-roast-mode')?.checked ? `<div class="rec-roast">${escapeHtml(roastLineFor(r))}</div>` : ''}
             </div>
           </div>
         `).join('') : `<p class="muted">${escapeHtml(t('report.no_issues'))}</p>`}
@@ -1007,6 +1553,11 @@ function renderReport(report) {
       </div>
     </div>
 
+    <div>
+      <h2 class="section-subtitle">${escapeHtml(t('achv.title'))}</h2>
+      <div class="achv-shelf" id="achievements-shelf"></div>
+    </div>
+
     <div class="health-history-wrap" id="health-history-wrap" hidden>
       <div class="health-history-head">
         <h2 class="section-subtitle">${escapeHtml(t('report.history_title'))}</h2>
@@ -1017,11 +1568,14 @@ function renderReport(report) {
   `;
 
   animateCountUp(document.getElementById('score-value'), report.healthScore);
+  document.getElementById('score-mascot').textContent = mascotForScore(report.healthScore);
   renderHealthHistory();
   document.getElementById('btn-health-history-clear').addEventListener('click', () => {
     try { localStorage.removeItem(HEALTH_HISTORY_KEY); } catch { /* ignore */ }
     renderHealthHistory();
   });
+  if (report.healthScore === 100) fireConfetti();
+  renderAchievements();
 }
 
 document.getElementById('btn-report-pdf').addEventListener('click', async () => {
@@ -1079,7 +1633,7 @@ const adminLoginError = document.getElementById('admin-login-error');
 const adminTabBtn = document.getElementById('tab-admin');
 
 document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
+  if (e.key === 'F10') {
     e.preventDefault();
     if (adminUnlocked) {
       document.querySelector('[data-tab="admin"]').click();

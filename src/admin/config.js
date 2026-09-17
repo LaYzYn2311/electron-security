@@ -1,6 +1,6 @@
 /**
  * Admin panel access — a hidden, password-gated diagnostics tab shipped
- * inside the app (Ctrl+Alt+A to open the login prompt).
+ * inside the app (F10 to open the login prompt).
  *
  * IMPORTANT — this is obscurity, not security. Electron apps ship as
  * readable/unpacked JS; anyone who downloads the installer can open
@@ -10,8 +10,8 @@
  *
  * Change these before you build/ship if you want a different login.
  */
-const ADMIN_USERNAME = 'admin';
-const ADMIN_PASSWORD = 'CW0Owmb84qgx';
+const ADMIN_USERNAME = 'ELADMIN1';
+const ADMIN_PASSWORD = 'ELECADMIN23#';
 
 /**
  * GitHub repo the Downloads panel reads release download counts from

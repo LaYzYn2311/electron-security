@@ -4,9 +4,10 @@ const { pathExists } = require('../utils/fsWalk');
 const junk = require('./junkFiles');
 const { scanDuplicates } = require('./duplicates');
 const { scanLargeOldFiles } = require('./largeOldFiles');
+const { scanUninstallResidue } = require('./uninstallResidue');
 const { t } = require('../i18n');
 
-const CATEGORY_KEYS = ['temp', 'logs', 'browser_cache', 'app_cache', 'trash', 'orphan_installer', 'empty_folder', 'duplicates', 'large_old'];
+const CATEGORY_KEYS = ['temp', 'logs', 'browser_cache', 'app_cache', 'trash', 'orphan_installer', 'empty_folder', 'uninstall_residue', 'duplicates', 'large_old'];
 function categoryLabel(key, locale) {
   return t(locale, `category.${key}`);
 }
@@ -19,6 +20,7 @@ const SCAN_STEPS = [
   ['trash', junk.scanTrash],
   ['orphan_installer', junk.scanOrphanInstallers],
   ['empty_folder', junk.scanEmptyFolders],
+  ['uninstall_residue', scanUninstallResidue],
 ];
 
 async function candidateUserDirs() {
